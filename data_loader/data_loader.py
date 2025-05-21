@@ -17,22 +17,14 @@ def load_csv(file_path):
     except FileNotFoundError:
         console.print(f"[bold red]ERROR:[/bold red] File not found at [bold]{file_path}[/bold]", style="red")
         return None
+    except pd.errors.EmptyDataError:
+        console.print(f"[yellow]⚠️ Warning: CSV file '[bold]{os.path.basename(file_path)}[/bold]' is empty.[/yellow]")
+        return pd.DataFrame() # Return empty DataFrame to avoid downstream errors
     except Exception as e:
         console.print(f"[bold red]ERROR:[/bold red] Failed to load CSV file [bold]{file_path}[/bold]: {e}", style="red")
         return None
 
-
 def load_specific_csv_from_folder(folder_path, file_name):
-    """
-    Load a specific CSV file from a folder.
-    
-    Parameters:
-    folder_path (str): Path to the folder containing CSV files
-    file_name (str): Name of the specific file to load
-    
-    Returns:
-    DataFrame or None: The loaded pandas DataFrame or None if error occurs
-    """
     if not os.path.isdir(folder_path):
         console.print(f"[bold red]ERROR:[/bold red] Specified folder '[bold]{folder_path}[/bold]' does not exist or is not a directory.", style="red")
         return None
@@ -43,20 +35,10 @@ def load_specific_csv_from_folder(folder_path, file_name):
         console.print(f"[bold red]ERROR:[/bold red] File '[bold]{file_name}[/bold]' does not exist in folder '[bold]{folder_path}[/bold]'.", style="red")
         return None
     
-    try:
-        df = pd.read_csv(file_path)
-        console.print(f"[green]✓ File loaded successfully:[/green] [bold]{file_name}[/bold] ([cyan]{len(df)}[/cyan] rows)")
-        return df
-    except pd.errors.EmptyDataError:
-        console.print(f"[yellow]⚠️ Warning: CSV file '[bold]{file_name}[/bold]' is empty.[/yellow]")
-        return None
-    except Exception as e:
-        console.print(f"[bold red]ERROR:[/bold red] Failed to load CSV file '[bold]{file_name}[/bold]': {e}", style="red")
-        return None
+    return load_csv(file_path)
 
 
 def load_all_csvs_from_folder(folder_path):
-    """Load all CSV files from a specified folder and concatenate them."""
     if not os.path.isdir(folder_path):
         console.print(f"[bold red]ERROR:[/bold red] Specified folder '[bold]{folder_path}[/bold]' does not exist or is not a directory.", style="red")
         return None
@@ -65,27 +47,28 @@ def load_all_csvs_from_folder(folder_path):
     
     if not csv_files:
         console.print(f"[yellow]No CSV files found in folder '[bold]{folder_path}[/bold]'.[/yellow]")
-        return None
+        return pd.DataFrame() # Return empty DataFrame
     
     all_dfs = []
     console.print(f"[blue]Found {len(csv_files)} CSV files in folder '[bold]{folder_path}[/bold]'. Starting to load...[/blue]")
     
     for file_path in csv_files:
-        try:
-            df = pd.read_csv(file_path)
+        df = load_csv(file_path)
+        if df is not None and not df.empty:
             all_dfs.append(df)
             console.print(f"  [green]✓ Loaded:[/green] [bold]{os.path.basename(file_path)}[/bold] ([cyan]{len(df)}[/cyan] rows)")
-        except FileNotFoundError:
-            console.print(f"  [red]ERROR: File not found {file_path} (this shouldn't happen if glob found it).[/red]")
-        except pd.errors.EmptyDataError:
-            console.print(f"  [yellow]⚠️ Warning: CSV file '[bold]{os.path.basename(file_path)}[/bold]' is empty.[/yellow]")
-        except Exception as e:
-            console.print(f"  [red]ERROR: Failed to load CSV file '[bold]{os.path.basename(file_path)}[/bold]': {e}[/red]")
+        elif df is not None and df.empty:
+             console.print(f"  [yellow]✓ Loaded (empty):[/yellow] [bold]{os.path.basename(file_path)}[/bold]")
+
 
     if not all_dfs:
-        console.print("[bold red]No DataFrames were successfully loaded.[/bold red]")
-        return None
+        console.print("[bold red]No DataFrames with content were successfully loaded.[/bold red]")
+        return pd.DataFrame() # Return empty DataFrame
         
     combined_df = pd.concat(all_dfs, ignore_index=True)
+    if combined_df.empty:
+        console.print("[yellow]Combined DataFrame is empty after loading all files.[/yellow]")
+        return pd.DataFrame()
+
     console.print(f"[green]✓ All CSV files have been loaded and concatenated. Combined DataFrame has [cyan]{len(combined_df)}[/cyan] rows.[/green]")
     return combined_df

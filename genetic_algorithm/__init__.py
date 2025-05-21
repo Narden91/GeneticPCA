@@ -1,1 +1,1 @@
-from .genetic_algorithm import GeneticFeatureSelector
+from .genetic_pca_optimizer import GeneticPCAOptimizer

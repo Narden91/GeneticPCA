@@ -1,80 +1,36 @@
 settings:
-  verbose: 0 # 0: minimal, 1: GA plot, 2: data heads
-  feature_selection: False
+  verbose: 1 # 0: minimal, 1: GA plot & basic info, 2: data heads
+  run_ga_for_pca: False # True to use GA for PCA, False to use manual PCA settings or no PCA
 
 data_loader:
-  data_folder_path: "data/LP_Dataset_3Devices__LC1__2500pointXstate__16_11_2022/"
-  target_column: "GT"
-  specific_file: "Fan_Heater__values.csv" # Desk_Lamp__values.csv 
+  data_folder_path: "data"
+  specific_file: "Dati_wallbox_aggregati.csv" 
+  # If specific_file is null or commented out, it will load all CSVs.
 
-genetic_algorithm:
+preprocessing:
+  scaler: "StandardScaler" # Options: "StandardScaler", "MinMaxScaler", None
+
+pca:
+  # Manual PCA settings (used if run_ga_for_pca is False and manual_pca_components > 0)
+  manual_pca_components: 0 # Number of PCA components. 0 means no PCA if GA is off.
+                           # Can also be a float between 0 and 1 (e.g., 0.95 for 95% variance)
+
+genetic_pca_optimizer:
+  # Only used if settings.run_ga_for_pca is True
   params:
-    popolazione: 10
-    generazioni: 5
-    # crossover_prob: 0.7 # Optional, defaults in GA class
-    # mutation_prob: 0.2  # Optional, defaults in GA class
-    # accuracy_weight: 0.6 # Optional, defaults in GA class
-    # feature_count_weight: 0.2 # Optional, defaults in GA class
-    # correlation_weight: 0.2 # Optional, defaults in GA class
+    population_size: 20
+    generations: 10
+    crossover_prob: 0.7
+    mutation_prob: 0.2
+    # Fitness weights
+    silhouette_weight: 0.8       # Weight for Silhouette Score
+    components_penalty_weight: 0.2 # Penalty for number of PCA components (to encourage fewer)
+    # Range of PCA components for GA to explore (0 means no PCA)
+    min_pca_components_ratio: 0.0 # Min ratio of original features (0 = no PCA allowed in search)
+    max_pca_components_ratio: 0.5 # Max ratio of original features (e.g., 0.5 = up to 50% of features)
 
-model:
-  type: LogisticRegression  # Options: RandomForest, XGBoost, CatBoost, LogisticRegression
-  global_random_state: 42
-
-  LogisticRegression_params:
-    C: 1.0
-    solver: 'lbfgs'  # For multiclass problems
-    multi_class: 'multinomial'  # For multiclass problems
-    max_iter: 1000
-    # penalty: 'l2'  # default
-    # class_weight: 'balanced'  # Optional for imbalanced classes
-
-  RandomForest_params:
-    n_estimators: 100
-    max_depth: 5 # null means no limit or use scikit-learn default
-    # min_samples_split: 2
-    # min_samples_leaf: 1
-    # random_state: 42 # Overrides global_random_state
-
-  XGBoost_params:
-    n_estimators: 100
-    learning_rate: 0.1
-    # max_depth: 3
-    # subsample: 0.8
-    # colsample_bytree: 0.8
-    # objective: 'multi:softprob' # Auto-set: 'multi:softprob' for multiclass, 'binary:logistic' for binary
-    # eval_metric: 'mlogloss'     # Auto-set: 'mlogloss' for multiclass, 'logloss' for binary
-    # use_label_encoder: false    # Auto-set to False
-    # random_state: 42            # Overrides global_random_state
-    
-  CatBoost_params:
-    iterations: 200 # Equivalent to n_estimators
-    learning_rate: 0.05
-    # depth: 6
-    # l2_leaf_reg: 3
-    # loss_function: 'MultiClass' # Auto-set: 'MultiClass' for multiclass, 'Logloss' for binary
-    # verbose: 0                  # Auto-set to 0 (silent) unless specified
-    # random_seed: 42             # Overrides global_random_state (CatBoost uses random_seed)
-
-cross_validation:
-  n_splits: 5
-  shuffle: True
-  # random_state: 42 # Optional: uses model.global_random_state by default if not set here
-
-calibration:
-  enabled: False # Set to True to enable calibration
-  default_method: "isotonic" # Fallback if specific model method not found
-  randomforest_method: "isotonic" # or "sigmoid"
-  xgboost_method: "isotonic"
-  catboost_method: "isotonic" 
-
-explainer:
-  shap:
-    enabled: False # Set to True to enable SHAP explanations
-    summary_plot_path: "reports/shap_summary_plot.png" # Path to save SHAP summary plot
-    # Add other SHAP specific parameters if your explainer.py uses them
-
-bayesian_methods:
-  params:
-    alpha: 1.0
-    beta: 1.0
+clustering:
+  dbscan:
+    eps: 20        # Epsilon for DBSCAN
+    min_samples: 10    # Min_samples for DBSCAN
+  # evaluation_metrics: ["silhouette", "davies_bouldin"] # Future extension

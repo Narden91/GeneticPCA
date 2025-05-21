@@ -104,4 +104,6 @@ logs/*
 output/*
 models/*
 plots/*
+data/*
 .env
+*.csv

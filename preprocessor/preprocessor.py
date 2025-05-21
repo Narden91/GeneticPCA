@@ -1,18 +1,25 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from rich.console import Console
 
-
-# Create a console instance for consistent printing
 console = Console()
 
-def preprocess_data(df: pd.DataFrame, target_column: str, verbose: int = 0) -> tuple:
-    """Performs basic preprocessing and data cleaning."""
-    console.print("[magenta]Starting data preprocessing...[/magenta]")
+def preprocess_data_unsupervised(df: pd.DataFrame, scaler_type: str = "StandardScaler", verbose: int = 0) -> pd.DataFrame:
+    """
+    Performs preprocessing for unsupervised learning:
+    1. Handles missing values (drops rows).
+    2. Selects only numeric columns.
+    3. Scales the data.
+    """
+    if df is None or df.empty:
+        console.print("[yellow]⚠️ Preprocessing skipped: Input DataFrame is None or empty.[/yellow]")
+        return pd.DataFrame()
+
+    console.print("[magenta]Starting data preprocessing for unsupervised learning...[/magenta]")
     
     # Step 1: Handle missing values
     initial_rows = len(df)
-    df_cleaned = df.dropna()  # Remove rows with NaN values
+    df_cleaned = df.dropna()
     rows_dropped = initial_rows - len(df_cleaned)
     
     if rows_dropped > 0:
@@ -20,55 +27,42 @@ def preprocess_data(df: pd.DataFrame, target_column: str, verbose: int = 0) -> t
     else:
         console.print("[green]No rows removed due to NaN values.[/green]")
 
-    # Step 2: Check if target column exists
-    if target_column not in df_cleaned.columns:
-        console.print(f"[bold red]ERROR: Target column '{target_column}' not found in DataFrame after NaN removal.[/bold red]")
-        return None, None, None, None 
+    if df_cleaned.empty:
+        console.print("[bold red]ERROR: DataFrame is empty after NaN removal.[/bold red]")
+        return pd.DataFrame()
 
-    # Step 3: Split features and target
-    X = df_cleaned.drop(columns=[target_column])
-    y = df_cleaned[target_column]
-
-    # Step 4: Verify data shapes and distribution
-    if verbose > 0:
-        console.print(f"[cyan]X shape before split: {X.shape}[/cyan]")
-        console.print(f"[cyan]y shape before split: {y.shape}[/cyan]")
-        console.print(f"[cyan]Unique values in y before split: {y.nunique()}, Distribution:\n{y.value_counts(normalize=True)}[/cyan]")
-
-    # Step 5: Check if stratification is possible
-    min_class_count = y.value_counts().min()
-    n_splits_for_stratify_check = 2 
+    # Step 2: Select only numeric columns
+    numeric_cols = df_cleaned.select_dtypes(include=['number']).columns
+    if len(numeric_cols) == 0:
+        console.print("[bold red]ERROR: No numeric columns found in the DataFrame for scaling and clustering.[/bold red]")
+        return pd.DataFrame()
     
-    stratify_param = None
-    if y.nunique() > 1 and min_class_count >= n_splits_for_stratify_check:
-        stratify_param = y
-        console.print("[green]Stratification enabled for train_test_split.[/green]")
-    elif y.nunique() <= 1:
-        console.print(f"[bold red]ERROR: Target column y has {y.nunique()} unique value(s). Cannot stratify or perform classification.[/bold red]")
-        return None, None, None, None  # Cannot proceed with classification
-    else:  # y.nunique() > 1 but min_class_count < n_splits_for_stratify_check
-        console.print(f"[yellow]WARNING: Stratification disabled. The least frequent class has only {min_class_count} samples, which is less than required for splitting (minimum 2).[/yellow]")
+    X_numeric = df_cleaned[numeric_cols]
+    if verbose > 1:
+        console.print(f"[cyan]Selected {len(numeric_cols)} numeric columns: {list(numeric_cols)}[/cyan]")
+        console.print(f"[cyan]Shape of numeric data: {X_numeric.shape}[/cyan]")
 
-    # Step 6: Perform train-test split
-    try:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, 
-            test_size=0.2, 
-            random_state=42, 
-            stratify=stratify_param
-        )
-        console.print("[green]Data successfully split into training and test sets.[/green]")
+    # Step 3: Scale the data
+    if scaler_type:
+        if scaler_type.lower() == "standardscaler":
+            scaler = StandardScaler()
+        elif scaler_type.lower() == "minmaxscaler":
+            scaler = MinMaxScaler()
+        else:
+            console.print(f"[yellow]⚠️ Unknown scaler type '{scaler_type}'. No scaling will be applied.[/yellow]")
+            scaler = None
         
-        # Step 7: Log split information if verbose
-        if verbose > 0:
-            console.print(f"[cyan]X_train shape: {X_train.shape}, y_train shape: {y_train.shape}[/cyan]")
-            console.print(f"[cyan]X_test shape: {X_test.shape}, y_test shape: {y_test.shape}[/cyan]")
-            console.print(f"[cyan]Class distribution in y_train:\n{y_train.value_counts(normalize=True)}[/cyan]")
-            console.print(f"[cyan]Class distribution in y_test:\n{y_test.value_counts(normalize=True)}[/cyan]")
+        if scaler:
+            console.print(f"[magenta]Applying {scaler_type}...[/magenta]")
+            X_scaled_array = scaler.fit_transform(X_numeric)
+            X_scaled_df = pd.DataFrame(X_scaled_array, columns=X_numeric.columns, index=X_numeric.index)
+            console.print("[green]✓ Data scaling completed.[/green]")
+            if verbose > 1:
+                console.print("[cyan]Scaled data head:[/cyan]")
+                console.print(X_scaled_df.head(3))
+            return X_scaled_df
+    else:
+        console.print("[yellow]No scaler specified. Using unscaled numeric data.[/yellow]")
+        return X_numeric
 
-        return X_train, X_test, y_train, y_test
-        
-    except ValueError as e:
-        console.print(f"[bold red]ERROR during train_test_split: {e}[/bold red]")
-        console.print("[red]   This can happen if stratification fails due to insufficient samples in a class relative to test_size.[/red]")
-        return None, None, None, None
+    return X_numeric

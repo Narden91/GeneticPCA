@@ -7,7 +7,7 @@ Il file `main.py` si trova al primo livello (root) del repository e funge da pun
 ## Struttura del Progetto
 
 ```
-genetic_ml_project/
+geneticpca/
 ├── data/                     # Cartella per i dataset (es. file CSV)
 │   └── esempio.csv           # File CSV di esempio creato da main.py per test
 ├── models/                   # Cartella per i modelli addestrati salvati (es. shap_summary_plot.png)
@@ -36,7 +36,7 @@ genetic_ml_project/
 ├── tests/                    # Cartella per i test unitari e di integrazione (da implementare)
 ├── main.py                   # Script principale per eseguire il pipeline
 ├── requirements.txt          # File con le dipendenze Python del progetto
-└── README.md                 # Questo file
+└── README.md                 
 ```
 
 ## Funzionalità Principali
