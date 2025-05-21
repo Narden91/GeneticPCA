@@ -18,19 +18,19 @@ pca:
 genetic_pca_optimizer:
   # Only used if settings.run_ga_for_pca is True
   params:
-    population_size: 20
-    generations: 10
+    population_size: 30
+    generations: 20
     crossover_prob: 0.7
     mutation_prob: 0.2
     # Fitness weights
     silhouette_weight: 0.8       # Weight for Silhouette Score
-    components_penalty_weight: 0.3 # Penalty for number of PCA components (to encourage fewer)
+    components_penalty_weight: 0.2 # Penalty for number of PCA components (to encourage fewer)
     # Range of PCA components for GA to explore (0 means no PCA)
     min_pca_components_ratio: 0.1 # Min ratio of original features (0 = no PCA allowed in search)
-    max_pca_components_ratio: 0.8 # Max ratio of original features (e.g., 0.5 = up to 50% of features)
+    max_pca_components_ratio: 0.7 # Max ratio of original features (e.g., 0.5 = up to 50% of features)
 
 clustering:
   dbscan:
-    eps: 10        # Epsilon for DBSCAN
+    eps: 8        # Epsilon for DBSCAN
     min_samples: 5    # Min_samples for DBSCAN
   # evaluation_metrics: ["silhouette", "davies_bouldin"] # Future extension

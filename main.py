@@ -93,6 +93,31 @@ def plot_clusters_2d(data_for_plot: pd.DataFrame, labels: pd.Series, title: str,
     plt.show()
 
 
+def evaluate_combined_score(silhouette, davies_bouldin, formula="S - DB"):
+    """
+    Evaluates a combined score from Silhouette and Davies-Bouldin.
+    Higher is better.
+    """
+    S = silhouette if silhouette is not None else -1.0 # Penalize if no silhouette
+    DB = davies_bouldin if davies_bouldin is not None else float('inf') # Penalize if no DB
+
+    # Ensure DB is not zero for division, and handle cases where it might be very large
+    if "DB" in formula and DB == float('inf'): # If DB is inf, some formulas will be problematic
+        return -float('inf') # Very bad score
+
+    if formula == "S - DB":
+        return S - (DB / 10 if DB > 1 else DB) # Try to scale DB down if it's large to not overly dominate S
+    elif formula == "S / (1 + DB)":
+        if DB == float('inf'): return -1.0 # Silhouette / infinity -> 0, but -1 is worse for no clusters
+        return S / (1 + max(0, DB)) # Ensure 1+DB is not zero
+    # Add more complex formulas with normalization if needed
+    else: # Default to Silhouette if formula is unknown
+        console.print(f"[yellow]Unknown combined_score_formula: '{formula}'. Defaulting to Silhouette score.[/yellow]")
+        return S
+
+
+
+
 def main():
     console.print(Panel.fit("[bold blue]Starting Unsupervised Clustering Pipeline (PCA + DBSCAN)...[/bold blue]",
                            border_style="blue"))
