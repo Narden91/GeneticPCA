@@ -31,6 +31,6 @@ genetic_pca_optimizer:
 
 clustering:
   dbscan:
-    eps: 1        # Epsilon for DBSCAN
+    eps: 10        # Epsilon for DBSCAN
     min_samples: 5    # Min_samples for DBSCAN
   # evaluation_metrics: ["silhouette", "davies_bouldin"] # Future extension

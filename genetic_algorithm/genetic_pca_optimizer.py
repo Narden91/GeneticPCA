@@ -29,8 +29,8 @@ class GeneticPCAOptimizer:
                  mutation_prob: float = 0.2,
                  silhouette_weight: float = 0.8,
                  components_penalty_weight: float = 0.2,
-                 min_pca_components_ratio: float = 0.0, # Min ratio of original features
-                 max_pca_components_ratio: float = 0.5, # Max ratio of original features
+                 min_pca_components_ratio: float = 0.0, 
+                 max_pca_components_ratio: float = 0.5, 
                  random_state: int = None):
 
         if X_scaled is None or X_scaled.empty:
@@ -51,18 +51,30 @@ class GeneticPCAOptimizer:
         self.components_penalty_weight = components_penalty_weight
 
         # Determine min and max number of components based on ratios
-        # 0 components means no PCA
-        self.min_n_components = 0 # Always allow 'no PCA' option
+        self.min_n_components = 0 # Always allow 'no PCA' option (controlled by min_pca_components_ratio if it's > 0)
+        
+        # If min_pca_components_ratio > 0, it could set a floor higher than 0.
+        # Let's refine this slightly for clarity based on the config:
+        min_from_ratio_config = int(self.original_n_features * min_pca_components_ratio)
+        self.min_n_components = max(0, min_from_ratio_config) # Ensures min_n_components is at least 0
+
         # Max components should not exceed original_n_features - 1 (if original_n_features > 1)
         # and should respect max_pca_components_ratio
-        max_from_ratio = int(self.original_n_features * max_pca_components_ratio)
-        self.max_n_components = min(max_from_ratio, self.original_n_features -1 if self.original_n_features > 1 else 1)
-        if self.max_n_components < self.min_n_components and self.original_n_features > 0: # Ensure max_n_components is valid
-             self.max_n_components = self.min_n_components # if ratio leads to less than min (0)
-        if self.original_n_features <=1 : # if only 1 feature, PCA doesn't make sense to reduce further
-            self.min_n_components = 0
-            self.max_n_components = 0
+        max_from_ratio_config = int(self.original_n_features * max_pca_components_ratio)
+        upper_bound_for_max = self.original_n_features -1 if self.original_n_features > 1 else (1 if self.original_n_features == 1 else 0)
+
+        self.max_n_components = min(max_from_ratio_config, upper_bound_for_max)
         
+        if self.max_n_components < self.min_n_components and self.original_n_features > 0:
+             self.max_n_components = self.min_n_components 
+        if self.original_n_features <=1 :
+            self.min_n_components = 0
+            self.max_n_components = 0 # No PCA if 0 or 1 original feature
+        
+        # Ensure min_n_components is not greater than max_n_components after all calculations
+        if self.min_n_components > self.max_n_components :
+            self.min_n_components = self.max_n_components # Or handle as an error/warning
+
         console.print(f"[GA] Original features: {self.original_n_features}. PCA components search range: [{self.min_n_components}, {self.max_n_components}]")
 
 
