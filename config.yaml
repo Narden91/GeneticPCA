@@ -1,6 +1,6 @@
 settings:
   verbose: 1 # 0: minimal, 1: GA plot & basic info, 2: data heads
-  run_ga_for_pca: False # True to use GA for PCA, False to use manual PCA settings or no PCA
+  run_ga_for_pca: True # True to use GA for PCA, False to use manual PCA settings or no PCA
 
 data_loader:
   data_folder_path: "data"
@@ -12,7 +12,7 @@ preprocessing:
 
 pca:
   # Manual PCA settings (used if run_ga_for_pca is False and manual_pca_components > 0)
-  manual_pca_components: 0 # Number of PCA components. 0 means no PCA if GA is off.
+  manual_pca_components: 0.85 # Number of PCA components. 0 means no PCA if GA is off.
                            # Can also be a float between 0 and 1 (e.g., 0.95 for 95% variance)
 
 genetic_pca_optimizer:
@@ -24,13 +24,13 @@ genetic_pca_optimizer:
     mutation_prob: 0.2
     # Fitness weights
     silhouette_weight: 0.8       # Weight for Silhouette Score
-    components_penalty_weight: 0.2 # Penalty for number of PCA components (to encourage fewer)
+    components_penalty_weight: 0.3 # Penalty for number of PCA components (to encourage fewer)
     # Range of PCA components for GA to explore (0 means no PCA)
-    min_pca_components_ratio: 0.0 # Min ratio of original features (0 = no PCA allowed in search)
-    max_pca_components_ratio: 0.5 # Max ratio of original features (e.g., 0.5 = up to 50% of features)
+    min_pca_components_ratio: 0.1 # Min ratio of original features (0 = no PCA allowed in search)
+    max_pca_components_ratio: 0.8 # Max ratio of original features (e.g., 0.5 = up to 50% of features)
 
 clustering:
   dbscan:
-    eps: 20        # Epsilon for DBSCAN
-    min_samples: 10    # Min_samples for DBSCAN
+    eps: 1        # Epsilon for DBSCAN
+    min_samples: 5    # Min_samples for DBSCAN
   # evaluation_metrics: ["silhouette", "davies_bouldin"] # Future extension

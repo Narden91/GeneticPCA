@@ -111,33 +111,27 @@ class GeneticPCAOptimizer:
                     X_current_array = pca.fit_transform(X_current)
                     X_current = pd.DataFrame(X_current_array, index=X_current.index)
                 except Exception as e:
-                    # console.print(f"[GA Fitness] PCA error for {n_pca_components} components: {e}. Using original data.")
-                    # This individual is likely to perform poorly, fitness will be low
-                    return -float('inf') # Penalize heavily if PCA fails
+                    return -float('inf')
         
-        # Perform DBSCAN and evaluate
-        labels = perform_dbscan(X_current, eps=self.dbscan_eps, min_samples=self.dbscan_min_samples)
+        # Perform DBSCAN and evaluate silently within GA
+        labels = perform_dbscan(X_current, eps=self.dbscan_eps, min_samples=self.dbscan_min_samples, verbose=0) 
         
-        # Use a more robust way to get clustering metrics
         eval_metrics = evaluate_clustering(X_current, labels, verbose=0) 
         silhouette = eval_metrics.get('silhouette_score')
         n_clusters = eval_metrics.get('n_clusters', 0)
 
-        if silhouette is None or n_clusters == 0: # No valid clusters or silhouette
-            silhouette = -1 # Worst possible silhouette
+        if silhouette is None or n_clusters < 2: # Adjusted condition: n_clusters must be >= 2 for silhouette
+            silhouette = -1 
         if n_clusters == 1 and eval_metrics.get('n_noise_points', len(labels)) < len(labels) : # Only one actual cluster found
             silhouette = -0.5 # Penalize if only one cluster and not all noise
 
         # Penalty for number of components (normalized)
-        # If n_pca_components is 0, penalty is 0.
-        # If original_n_features is 0 or 1, component_ratio can be tricky.
         if self.original_n_features > 1:
             component_ratio = n_pca_components / (self.original_n_features -1) if n_pca_components > 0 else 0
-        elif self.original_n_features == 1 and n_pca_components > 0: # PCA on 1 feature doesn't reduce
+        elif self.original_n_features == 1 and n_pca_components > 0:
             component_ratio = 1 
-        else: # original_n_features == 0 or (original_n_features == 1 and n_pca_components == 0)
+        else: 
             component_ratio = 0
-
 
         fitness_val = (self.silhouette_weight * silhouette) - \
                       (self.components_penalty_weight * component_ratio)
@@ -148,7 +142,6 @@ class GeneticPCAOptimizer:
         # Tournament selection
         parents = []
         for _ in range(self.population_size):
-            # Ensure we have at least 2 unique individuals to sample from if population_size is small
             k = min(2, len(population)) 
             if k < 2 and len(population) > 0: # if only one individual, it's the winner
                 parents.append(population[0])
@@ -162,16 +155,8 @@ class GeneticPCAOptimizer:
         return parents
 
     def _crossover(self, parent1: int, parent2: int) -> tuple:
-        # Integer crossover (e.g., averaging, or single point on binary representation if complex)
-        # For a single integer, a simple averaging or random choice can work.
-        # Or, treat as a bit string if the range is large.
-        # Here, simple averaging and clamping.
         if random.random() < self.crossover_prob:
             child1 = int((parent1 + parent2) / 2)
-            # Could also do a random split point if representing as bits
-            # For simplicity, let's try another way: one child gets p1, other p2, then mutate.
-            # Or, a weighted average, or simply pick one.
-            # Let's use a simpler crossover: one child is arithmetic mean, other is one of parents.
             child2 = random.choice([parent1, parent2]) 
             
             # Ensure children are within bounds
@@ -243,10 +228,10 @@ class GeneticPCAOptimizer:
                 
                 child1, child2 = self._crossover(parent1, parent2)
                 next_population.append(self._mutate(child1))
-                if len(next_population) < self.population_size : # Ensure we don't exceed pop size
+                if len(next_population) < self.population_size : 
                     next_population.append(self._mutate(child2))
             
-            population = next_population[:self.population_size] # Ensure correct population size
+            population = next_population[:self.population_size] 
 
         console.print(f"[GA] Optimization Complete. Best n_components: [bold green]{best_individual}[/bold green], Best Fitness: {best_fitness:.4f}")
         return best_individual

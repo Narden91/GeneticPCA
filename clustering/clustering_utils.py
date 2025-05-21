@@ -55,40 +55,43 @@ def apply_pca(data: pd.DataFrame, n_components=None, random_state=42, verbose: i
         return data, None
 
 
-def perform_dbscan(data: pd.DataFrame, eps: float = 0.5, min_samples: int = 5):
+def perform_dbscan(data: pd.DataFrame, eps: float = 0.5, min_samples: int = 5, verbose: int = 1): # Added verbose
     """
     Performs DBSCAN clustering.
     Returns cluster labels.
+    verbose: 0 for silent, 1 for standard messages.
     """
     if data is None or data.empty:
-        console.print("[yellow]⚠️ DBSCAN skipped: Input data is None or empty.[/yellow]")
+        if verbose > 0: console.print("[yellow]⚠️ DBSCAN skipped: Input data is None or empty.[/yellow]")
         return np.array([])
         
     if data.shape[0] < min_samples :
-        console.print(f"[bold red]ERROR: DBSCAN min_samples ({min_samples}) is greater than the number of data points ({data.shape[0]}). Cannot perform DBSCAN.[/bold red]")
-        return np.array([-1] * data.shape[0]) # All noise
+        if verbose > 0: console.print(f"[bold red]ERROR: DBSCAN min_samples ({min_samples}) is greater than the number of data points ({data.shape[0]}). Cannot perform DBSCAN.[/bold red]")
+        return np.array([-1] * data.shape[0]) 
 
-    console.print(f"[cyan]Performing DBSCAN with eps={eps}, min_samples={min_samples}...[/cyan]")
+    if verbose > 0: console.print(f"[cyan]Performing DBSCAN with eps={eps}, min_samples={min_samples}...[/cyan]")
     try:
         dbscan = DBSCAN(eps=eps, min_samples=min_samples)
         labels = dbscan.fit_predict(data)
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        n_noise = np.sum(labels == -1)
-        console.print(f"[green]✓ DBSCAN completed. Found {n_clusters} clusters and {n_noise} noise points.[/green]")
+        if verbose > 0:
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            n_noise = np.sum(labels == -1)
+            console.print(f"[green]✓ DBSCAN completed. Found {n_clusters} clusters and {n_noise} noise points.[/green]")
         return labels
     except Exception as e:
-        console.print(f"[bold red]ERROR during DBSCAN: {e}[/bold red]")
-        return np.array([-1] * data.shape[0]) # All noise
+        if verbose > 0: console.print(f"[bold red]ERROR during DBSCAN: {e}[/bold red]")
+        return np.array([-1] * data.shape[0])
 
 
-def evaluate_clustering(data: pd.DataFrame, labels: np.ndarray, verbose: int = 0):
+def evaluate_clustering(data: pd.DataFrame, labels: np.ndarray, verbose: int = 1): # Added verbose
     """
     Evaluates clustering performance.
     Returns a dictionary of metrics.
+    verbose: 0 for silent, 1 for standard messages.
     """
     results = {}
     if data is None or data.empty or labels is None or len(labels) == 0 or len(labels) != data.shape[0]:
-        console.print("[yellow]⚠️ Clustering evaluation skipped: Invalid data or labels.[/yellow]")
+        if verbose > 0: console.print("[yellow]⚠️ Clustering evaluation skipped: Invalid data or labels.[/yellow]")
         return results
 
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
@@ -96,27 +99,25 @@ def evaluate_clustering(data: pd.DataFrame, labels: np.ndarray, verbose: int = 0
     results['n_noise_points'] = np.sum(labels == -1)
     results['percentage_noise'] = (results['n_noise_points'] / len(labels)) * 100 if len(labels) > 0 else 0
 
-    if n_clusters < 2: # Silhouette and Davies-Bouldin require at least 2 clusters
-        console.print(f"[yellow]Found {n_clusters} cluster(s). Silhouette Score and Davies-Bouldin Index require at least 2 clusters (excluding noise).[/yellow]")
-        results['silhouette_score'] = None
+    if n_clusters < 2:
+        if verbose > 0: console.print(f"[yellow]Found {n_clusters} cluster(s). Silhouette Score and Davies-Bouldin Index require at least 2 clusters (excluding noise).[/yellow]")
+        results['silhouette_score'] = None # Or -1 as per fitness function expectation
         results['davies_bouldin_score'] = None
     else:
         try:
             silhouette = silhouette_score(data, labels)
             results['silhouette_score'] = silhouette
-            if verbose > 0:
-                console.print(f"Silhouette Score: [bold cyan]{silhouette:.4f}[/bold cyan]")
+            if verbose > 0: console.print(f"Silhouette Score: [bold cyan]{silhouette:.4f}[/bold cyan]")
         except Exception as e:
-            console.print(f"[yellow]⚠️ Could not calculate Silhouette Score: {e}[/yellow]")
-            results['silhouette_score'] = None
+            if verbose > 0: console.print(f"[yellow]⚠️ Could not calculate Silhouette Score: {e}[/yellow]")
+            results['silhouette_score'] = None # Or -1
         
         try:
             db_score = davies_bouldin_score(data, labels)
             results['davies_bouldin_score'] = db_score
-            if verbose > 0:
-                console.print(f"Davies-Bouldin Score: [bold cyan]{db_score:.4f}[/bold cyan] (lower is better)")
+            if verbose > 0: console.print(f"Davies-Bouldin Score: [bold cyan]{db_score:.4f}[/bold cyan] (lower is better)")
         except Exception as e:
-            console.print(f"[yellow]⚠️ Could not calculate Davies-Bouldin Score: {e}[/yellow]")
+            if verbose > 0: console.print(f"[yellow]⚠️ Could not calculate Davies-Bouldin Score: {e}[/yellow]")
             results['davies_bouldin_score'] = None
             
     if verbose > 0:

@@ -9,61 +9,87 @@ import numpy as np
 from sklearn.decomposition import PCA as SklearnPCA
 import matplotlib.pyplot as plt
 from rich import print as rprint 
-
-# Import modules
 from data_loader import load_all_csvs_from_folder, load_specific_csv_from_folder
 from preprocessor import preprocess_data_unsupervised
 from clustering import apply_pca, perform_dbscan, evaluate_clustering
 from genetic_algorithm import GeneticPCAOptimizer 
 
-# Create a console instance
 console = Console()
 
-def plot_clusters_2d(data_for_plot: pd.DataFrame, labels: pd.Series, title: str, save_path: str = None):
+
+def plot_clusters_2d(data_for_plot: pd.DataFrame, labels: pd.Series, title: str, save_path: str = None, highlight_anomalies=True):
     """
     Plots clusters in 2D using PCA for dimensionality reduction.
-    Assumes data_for_plot is the data used for clustering (e.g., X_scaled or X_pca).
+    Highlights anomaly points (label -1) if requested.
     """
     if data_for_plot is None or data_for_plot.empty or labels.empty:
         console.print("[yellow]⚠️ Plotting skipped: No data or labels to plot.[/yellow]")
         return
 
-    # Reduce to 2D using PCA for visualization
-    # This PCA is *only* for visualization if the original clustering was done on higher-D data
     n_plot_components = min(2, data_for_plot.shape[1])
-    if n_plot_components < 2 and data_for_plot.shape[1] == 1: # If data is 1D, plot as is
+    if n_plot_components < 2 and data_for_plot.shape[1] == 1:
         console.print("[cyan]Data is 1D. Plotting 1D scatter with jitter.[/cyan]")
         plt.figure(figsize=(10, 6))
-        # Add jitter for better visibility of 1D points
         jitter = np.random.normal(0, 0.02, size=data_for_plot.shape[0])
-        plt.scatter(data_for_plot.iloc[:, 0], jitter, c=labels, cmap='viridis', s=50, alpha=0.7)
-        plt.yticks([]) # No meaningful y-axis for jitter
+        normal_mask = labels != -1
+        anomaly_mask = labels == -1
+
+        plt.scatter(data_for_plot.iloc[normal_mask.values, 0], jitter[normal_mask.values],
+                    c=labels[normal_mask], cmap='viridis', s=50, alpha=0.7, label='Normal Clusters')
+        if highlight_anomalies and anomaly_mask.any():
+            plt.scatter(data_for_plot.iloc[anomaly_mask.values, 0], jitter[anomaly_mask.values],
+                        c='red', marker='x', s=100, label='Anomalies (Noise)') # Removed edgecolors
+
+        plt.yticks([])
         plt.xlabel(data_for_plot.columns[0])
 
-    elif n_plot_components < 2 :
+    elif n_plot_components < 2:
         console.print(f"[yellow]⚠️ Cannot create 2D plot. Data has {data_for_plot.shape[1]} features. Skipping plot.[/yellow]")
         return
     else:
         pca_plot = SklearnPCA(n_components=2, random_state=42)
         data_2d = pca_plot.fit_transform(data_for_plot)
-        
-        plt.figure(figsize=(10, 8))
-        scatter = plt.scatter(data_2d[:, 0], data_2d[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+
+        plt.figure(figsize=(12, 8))
+        normal_mask = labels != -1
+        anomaly_mask = labels == -1
+
+        scatter = plt.scatter(data_2d[normal_mask.values, 0], data_2d[normal_mask.values, 1],
+                              c=labels[normal_mask], cmap='viridis', s=50, alpha=0.6, label='Normal Clusters')
+
+        if highlight_anomalies and anomaly_mask.any():
+            plt.scatter(data_2d[anomaly_mask.values, 0], data_2d[anomaly_mask.values, 1],
+                        c='red', marker='x', s=100, label='Anomalies (Noise)') # Removed edgecolors and linewidths for 'x'
+
         plt.xlabel("Principal Component 1 (for visualization)")
         plt.ylabel("Principal Component 2 (for visualization)")
-    
+
     plt.title(title)
-    
-    # Create a legend for clusters
-    unique_labels = sorted(labels.unique())
-    handles = [plt.Line2D([0], [0], marker='o', color='w', label=f'Cluster {l}' if l != -1 else 'Noise',
-                          markerfacecolor=scatter.cmap(scatter.norm(l)), markersize=10) for l in unique_labels]
-    plt.legend(handles=handles, title="Clusters")
+
+    handles = []
+    # Use a mask to get unique labels from normal points for colormap consistency
+    unique_normal_labels = sorted(labels[normal_mask].unique())
+
+    # Create legend entries for normal clusters
+    for l in unique_normal_labels:
+        if l != -1: # Should always be true due to normal_mask, but good check
+            # Get color from the scatter object's colormap and normalization
+            color_val = scatter.cmap(scatter.norm(l))
+            handles.append(plt.Line2D([0], [0], marker='o', color='w', label=f'Cluster {l}',
+                                      markerfacecolor=color_val, markersize=10))
+
+    # Create legend entry for anomalies if they exist and are highlighted
+    if highlight_anomalies and anomaly_mask.any():
+        handles.append(plt.Line2D([0], [0], marker='x', color='w', label='Anomalies (Noise)',
+                                  markerfacecolor='red', markersize=10)) # For 'x', markerfacecolor sets the line color
+
+    plt.legend(handles=handles, title="Legend", bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True, linestyle='--', alpha=0.7)
-    
+    plt.tight_layout(rect=[0, 0, 0.85, 1])
+
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        console.print(f"[green]✓ Cluster plot saved to [bold]{save_path}[/bold][/green]")
+        console.print(f"[green]✓ Cluster (Anomaly) plot saved to [bold]{save_path}[/bold][/green]")
     plt.show()
 
 
@@ -71,7 +97,6 @@ def main():
     console.print(Panel.fit("[bold blue]Starting Unsupervised Clustering Pipeline (PCA + DBSCAN)...[/bold blue]",
                            border_style="blue"))
 
-    # ... (rest of your config loading and data loading code remains the same) ...
     config_path = 'config.yaml'
     try:
         with open(config_path, 'r') as f:
@@ -80,7 +105,6 @@ def main():
     except FileNotFoundError:
         console.print(f"[bold red]ERROR:[/bold red] Configuration file '[bold]{config_path}[/bold]' not found.", style="red")
         exit(1)
-    # ... (and so on, up to the point after clustering_metrics)
 
     verbose_level = config.get('settings', {}).get('verbose', 0)
 
@@ -110,7 +134,7 @@ def main():
         console.print("[cyan]Initial data head:[/cyan]")
         rprint(dataframe.head(3))
 
-    # 2. Preprocess Data (for unsupervised)
+    # 2. Preprocess Data
     console.print(Panel("[bold magenta]--- Starting Preprocessing ---[/bold magenta]", border_style="magenta"))
     scaler_type = config.get('preprocessing', {}).get('scaler', 'StandardScaler')
 
@@ -124,7 +148,6 @@ def main():
     if verbose_level > 1 and not X_scaled.empty:
         console.print("[cyan]Scaled data head:[/cyan]")
         rprint(X_scaled.head(3))
-
 
     # 3. PCA (Potentially optimized by GA)
     console.print(Panel("[bold yellow]--- PCA Optimization & Application ---[/bold yellow]", border_style="yellow"))
@@ -151,7 +174,6 @@ def main():
                 dbscan_min_samples=dbscan_params_for_ga.get('min_samples', 5),
                 population_size=ga_config.get('population_size', 20),
                 generations=ga_config.get('generations', 10),
-                # ... (other GA params from your code)
                 crossover_prob=ga_config.get('crossover_prob', 0.7),
                 mutation_prob=ga_config.get('mutation_prob', 0.2),
                 silhouette_weight=ga_config.get('silhouette_weight', 0.8),
@@ -176,14 +198,13 @@ def main():
             selected_n_components = 0
     
     if selected_n_components > 0 and X_scaled.shape[1] > 1:
-        # apply_pca is from clustering_utils
         X_for_clustering, pca_model = apply_pca(X_scaled, n_components=selected_n_components, verbose=verbose_level)
         if X_for_clustering.empty or pca_model is None:
              console.print("[yellow]PCA application resulted in empty data or failed. Using scaled data without PCA.[/yellow]")
              X_for_clustering = X_scaled.copy()
         elif pca_model:
              console.print(f"[green]✓ PCA applied. Data shape for clustering: {X_for_clustering.shape}[/green]")
-             pca_applied_for_clustering = True # PCA was used for clustering
+             pca_applied_for_clustering = True 
     else:
         console.print("[cyan]Skipping PCA application step. Using preprocessed data directly for clustering.[/cyan]")
         X_for_clustering = X_scaled.copy()
@@ -193,58 +214,80 @@ def main():
         exit(1)
 
     # 4. Perform DBSCAN Clustering
-    console.print(Panel("[bold blue]--- DBSCAN Clustering ---[/bold blue]", border_style="blue"))
+    console.print(Panel("[bold blue]--- DBSCAN Clustering for Anomaly Detection ---[/bold blue]", border_style="blue"))
     dbscan_config = config.get('clustering', {}).get('dbscan', {})
     dbscan_eps = dbscan_config.get('eps', 0.5)
     dbscan_min_samples = dbscan_config.get('min_samples', 5)
     
-    cluster_labels_array = perform_dbscan(X_for_clustering, eps=dbscan_eps, min_samples=dbscan_min_samples)
-    cluster_labels = pd.Series(cluster_labels_array, index=X_for_clustering.index)
+    console.print(f"[cyan]Identifying normal behavior clusters and anomalies (noise points) using DBSCAN...[/cyan]")
+    cluster_labels_array = perform_dbscan(X_for_clustering, eps=dbscan_eps, min_samples=dbscan_min_samples, verbose=verbose_level)
+    cluster_labels = pd.Series(cluster_labels_array, index=X_for_clustering.index, name="dbscan_label")
 
 
     if len(cluster_labels) == 0 :
          console.print(Panel("[bold red]Pipeline aborted: DBSCAN failed to produce labels.[/bold red]", border_style="red"))
          exit(1)
          
-    # 5. Evaluate Clustering
-    console.print(Panel("[bold green]--- Clustering Evaluation ---[/bold green]", border_style="green"))
-    clustering_metrics = evaluate_clustering(X_for_clustering, cluster_labels.to_numpy(), verbose=verbose_level) # Pass numpy array
+    # 5. Evaluate Clustering (and report anomalies)
+    console.print(Panel("[bold green]--- Clustering & Anomaly Detection Evaluation ---[/bold green]", border_style="green"))
+    clustering_metrics = evaluate_clustering(X_for_clustering, cluster_labels.to_numpy(), verbose=verbose_level)
     
-    rprint("\n[bold]Clustering Metrics:[/bold]")
-    for metric, value in clustering_metrics.items():
-        if isinstance(value, float):
-            rprint(f"  {metric.replace('_', ' ').title()}: [cyan]{value:.4f}[/cyan]")
-        else:
-            rprint(f"  {metric.replace('_', ' ').title()}: [cyan]{value}[/cyan]")
+    num_anomalies = clustering_metrics.get('n_noise_points', 0)
+    percentage_anomalies = clustering_metrics.get('percentage_noise', 0.0)
 
-    # 6. Plot Clusters (New Step)
-    console.print(Panel("[bold yellow]--- Visualizing Clusters ---[/bold yellow]", border_style="yellow"))
-    plot_title = f"DBSCAN Clusters (eps={dbscan_eps}, min_samples={dbscan_min_samples})"
-    if pca_applied_for_clustering:
+    rprint("\n[bold]Normal Behavior Clustering Metrics:[/bold]")
+    for metric, value in clustering_metrics.items():
+        if metric not in ['n_noise_points', 'percentage_noise']: 
+            if isinstance(value, float):
+                rprint(f"  {metric.replace('_', ' ').title()}: [cyan]{value:.4f}[/cyan]")
+            else:
+                rprint(f"  {metric.replace('_', ' ').title()}: [cyan]{value}[/cyan]")
+    
+    console.print(f"\n[bold red]Anomaly Detection Results:[/bold red]")
+    console.print(f"  Number of Potential Anomalies (Noise Points): [bold cyan]{num_anomalies}[/bold cyan]")
+    console.print(f"  Percentage of Data Flagged as Anomalies: [bold cyan]{percentage_anomalies:.2f}%[/bold cyan]")
+
+
+    # 6. Plot Clusters (highlighting anomalies)
+    console.print(Panel("[bold yellow]--- Visualizing Clusters & Anomalies ---[/bold yellow]", border_style="yellow"))
+    plot_title = f"DBSCAN Clusters & Anomalies (eps={dbscan_eps}, min_samples={dbscan_min_samples})"
+    if pca_applied_for_clustering: # pca_applied_for_clustering flag from earlier
         plot_title += f"\nData Clustered on {X_for_clustering.shape[1]} PCA Components"
     else:
         plot_title += f"\nData Clustered on Original {X_for_clustering.shape[1]} Scaled Features"
     
-    # X_for_clustering is the data that DBSCAN actually saw (either scaled or PCA-reduced)
     plot_clusters_2d(X_for_clustering, cluster_labels, 
                      title=plot_title, 
-                     save_path="models/dbscan_cluster_plot.png")
+                     save_path="models/dbscan_anomaly_plot.png",
+                     highlight_anomalies=True) # Ensure anomalies are highlighted
 
+    # 7. Save results (including anomaly flags)
+    console.print(Panel("[bold blue]--- Saving Results ---[/bold blue]", border_style="blue"))
+    
+    # Create an 'is_anomaly' column
+    anomaly_series = (cluster_labels == -1).rename('is_anomaly')
 
-    # Save results
     if len(dataframe.index.intersection(cluster_labels.index)) == len(cluster_labels):
-        # Align original dataframe with results from scaled/clustered data
-        # X_scaled.index contains the correct indices after potential NaN drops
-        # cluster_labels should ideally share this index if X_for_clustering was derived from X_scaled
+        output_df = dataframe.loc[cluster_labels.index].copy()
+        output_df['cluster_label'] = cluster_labels.values # DBSCAN's cluster label
+        output_df['is_anomaly'] = anomaly_series.loc[output_df.index].values # Add anomaly flag
         
-        output_df = dataframe.loc[cluster_labels.index].copy() # Use .loc with the index from cluster_labels
-        output_df['cluster_label'] = cluster_labels.values # Assign values to avoid index issues
-        output_file = "results_with_clusters.csv"
+        output_file = "results_with_anomalies.csv"
         try:
-            output_df.to_csv(output_file, index=True) # Save original index if useful
-            console.print(f"\n[green]✓ Results with cluster labels saved to [bold]{output_file}[/bold][/green]")
+            # If original dataframe had a time index, preserve it if possible
+            # Assuming 'dataframe' might have a meaningful index
+            output_df.to_csv(output_file, index=True)
+            console.print(f"\n[green]✓ Results with cluster labels and anomaly flags saved to [bold]{output_file}[/bold][/green]")
+            
+            anomalous_data = output_df[output_df['is_anomaly'] == True]
+            if not anomalous_data.empty:
+                console.print(f"\n[cyan]Sample of detected anomalous data points (first 5):[/cyan]")
+                rprint(anomalous_data.head())
+            else:
+                console.print("[cyan]No anomalies detected with current parameters.[/cyan]")
+
         except Exception as e:
-            console.print(f"[yellow]⚠️ Could not save results with cluster labels: {e}[/yellow]")
+            console.print(f"[yellow]⚠️ Could not save results: {e}[/yellow]")
     else:
         console.print(f"[yellow]⚠️ Index mismatch: Could not reliably align original dataframe with cluster labels for saving.[/yellow]")
         console.print(f"   Original df index len: {len(dataframe.index)}, Unique: {dataframe.index.nunique()}")
