@@ -269,6 +269,87 @@ def main():
     console.print(f"  Number of Potential Anomalies (Noise Points): [bold cyan]{num_anomalies}[/bold cyan]")
     console.print(f"  Percentage of Data Flagged as Anomalies: [bold cyan]{percentage_anomalies:.2f}%[/bold cyan]")
 
+    
+    bayesian_config = config.get('bayesian_anomaly_detection', {})
+    use_bayesian_anomaly = bayesian_config.get('enabled', False)
+
+    if use_bayesian_anomaly:
+        console.print(Panel("[bold magenta]--- Probabilistic Anomaly Detection with Bayesian Methods ---[/bold magenta]", border_style="magenta"))
+        
+        try:
+            from bayesian_methods import BayesianAnomalyDetector
+            
+            # Get configuration parameters
+            bayesian_method = bayesian_config.get('method', 'auto')
+            threshold_percentile = bayesian_config.get('threshold_percentile', 95)
+            contamination = bayesian_config.get('contamination', 0.05)
+            compare_with_dbscan = bayesian_config.get('compare_with_dbscan', True)
+            
+            console.print(f"[cyan]Initializing Bayesian anomaly detector (method: {bayesian_method}, threshold: {threshold_percentile}th percentile)[/cyan]")
+            
+            # Create and fit the Bayesian anomaly detector
+            bayesian_detector = BayesianAnomalyDetector(
+                threshold_percentile=threshold_percentile,
+                method=bayesian_method,
+                contamination=contamination,
+                random_state=42
+            )
+            
+            with console.status("[bold magenta]Fitting Bayesian model for anomaly detection...[/bold magenta]", spinner="dots"):
+                # Use the same data that was used for clustering
+                bayesian_detector.fit(X_for_clustering)
+            
+            # Get anomaly scores and predictions
+            with console.status("[bold magenta]Calculating anomaly scores...[/bold magenta]", spinner="dots"):
+                bayesian_scores = bayesian_detector.predict_proba(X_for_clustering)
+                bayesian_labels = bayesian_detector.predict(X_for_clustering)
+            
+            # Count and report anomalies
+            bayesian_anomalies = np.sum(bayesian_labels == -1)
+            bayesian_anomaly_pct = (bayesian_anomalies / len(bayesian_labels)) * 100
+            
+            console.print(f"\n[bold magenta]Bayesian Anomaly Detection Results:[/bold magenta]")
+            console.print(f"  Number of Anomalies Detected: [bold cyan]{bayesian_anomalies}[/bold cyan]")
+            console.print(f"  Percentage of Data Flagged as Anomalies: [bold cyan]{bayesian_anomaly_pct:.2f}%[/bold cyan]")
+            
+            # Plot anomaly score distribution
+            bayesian_detector.plot_scores(X_for_clustering, 
+                                        title="Bayesian Anomaly Score Distribution",
+                                        save_path="models/bayesian_anomaly_scores.png")
+            
+            # If requested, compare with DBSCAN results
+            if compare_with_dbscan:
+                comparison_results = bayesian_detector.compare_with_dbscan(
+                    X_for_clustering, 
+                    cluster_labels.to_numpy(),
+                    save_path="models/dbscan_bayesian_comparison.png"
+                )
+            
+            # Add Bayesian results to the output dataframe
+            if len(dataframe.index.intersection(cluster_labels.index)) == len(cluster_labels):
+                if 'output_df' not in locals():
+                    output_df = dataframe.loc[cluster_labels.index].copy()
+                    output_df['cluster_label'] = cluster_labels.values
+                    output_df['is_anomaly'] = (cluster_labels == -1).astype(int)
+                
+                # Add Bayesian anomaly flags and scores
+                output_df['bayesian_anomaly'] = (bayesian_labels == -1).astype(int)
+                output_df['bayesian_score'] = bayesian_scores
+                
+                # Update output file to include Bayesian results
+                output_file = "results_with_anomalies.csv"
+                try:
+                    output_df.to_csv(output_file, index=True)
+                    console.print(f"\n[green]✓ Results with DBSCAN and Bayesian anomaly detection saved to [bold]{output_file}[/bold][/green]")
+                except Exception as e:
+                    console.print(f"[yellow]⚠️ Could not save results: {e}[/yellow]")
+            
+        except ImportError as e:
+            console.print(f"[yellow]⚠️ Could not load Bayesian methods module: {e}[/yellow]")
+            console.print("[yellow]Make sure pgmpy and scikit-learn are installed[/yellow]")
+        except Exception as e:
+            console.print(f"[bold red]ERROR in Bayesian anomaly detection: {str(e)}[/bold red]")
+            console.print("[yellow]Continuing with DBSCAN results only[/yellow]")
 
     # 6. Plot Clusters (highlighting anomalies)
     console.print(Panel("[bold yellow]--- Visualizing Clusters & Anomalies ---[/bold yellow]", border_style="yellow"))

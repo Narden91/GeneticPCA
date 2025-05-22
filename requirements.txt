@@ -1,9 +1,5 @@
 PyYAML
 pandas
-scikit-learn
-xgboost
-catboost
-shap
-lime
 matplotlib
-deap
+pgmpy>=0.1.20
+scikit-learn>=1.0.2
