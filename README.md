@@ -1,95 +1,109 @@
-# Progetto di Classificazione Multiclasse con Struttura Modulare Avanzata
+# GeneticPCA: Unsupervised Clustering with Genetic Algorithm Optimization
 
-Questo progetto fornisce una struttura modulare per un task di classificazione multiclasse utilizzando Python e diverse librerie di machine learning. Include moduli per il caricamento dei dati, preprocessing, classificazione con XGBoost, CatBoost e Random Forest, calibrazione dei modelli, interpretabilità, algoritmi genetici (esempio) e metodi bayesiani (esempio).
+This project provides a modular structure for unsupervised clustering and anomaly detection using PCA and DBSCAN. It features a genetic algorithm optimization approach to automatically select the optimal number of PCA components for clustering quality.
 
-Il file `main.py` si trova al primo livello (root) del repository e funge da punto di ingresso principale per l'esecuzione del pipeline.
+The file `main.py` serves as the main entry point for the pipeline execution, orchestrated through a YAML configuration file.
 
-## Struttura del Progetto
+## Project Structure
 
 ```
-geneticpca/
-├── data/                     # Cartella per i dataset (es. file CSV)
-│   └── esempio.csv           # File CSV di esempio creato da main.py per test
-├── models/                   # Cartella per i modelli addestrati salvati (es. shap_summary_plot.png)
-├── notebooks/                # Cartella per Jupyter notebooks di analisi esplorativa o sperimentazione
-├── data_loader/              # Modulo per il caricamento dei dati
+GeneticPCA/
+├── data/                     # Folder for datasets (CSV files)
+├── models/                   # Folder for saved outputs (plots, models)
+├── notebooks/                # Folder for Jupyter notebooks (for exploratory analysis)
+├── data_loader/              # Module for loading data
 │   ├── __init__.py
 │   └── data_loader.py
-├── preprocessor/             # Modulo per il preprocessing e la pulizia dei dati
+├── preprocessor/             # Module for data preprocessing
 │   ├── __init__.py
 │   └── preprocessor.py
-├── classifier/               # Modulo per l'addestramento e la valutazione dei modelli
+├── clustering/               # Module for clustering algorithms
 │   ├── __init__.py
-│   └── classifier.py
-├── calibration/              # Modulo per la calibrazione dei modelli
+│   └── clustering_utils.py
+├── genetic_algorithm/        # Module for genetic algorithm optimization
 │   ├── __init__.py
-│   └── calibration.py
-├── explainer/                # Modulo per l'interpretabilità dei modelli
-│   ├── __init__.py
-│   └── explainer.py
-├── genetic_algorithm/        # Modulo per algoritmi genetici (esempio)
-│   ├── __init__.py
-│   └── genetic_algorithm.py
-├── bayesian_methods/         # Modulo per metodi bayesiani (esempio)
+│   └── genetic_pca_optimizer.py
+├── bayesian_methods/         # Module for bayesian methods (placeholder)
 │   ├── __init__.py
 │   └── bayesian_methods.py
-├── tests/                    # Cartella per i test unitari e di integrazione (da implementare)
-├── main.py                   # Script principale per eseguire il pipeline
-├── requirements.txt          # File con le dipendenze Python del progetto
+├── main.py                   # Main script to execute the pipeline
+├── config.yaml               # Configuration file for the pipeline
+├── requirements.txt          # Python dependencies
 └── README.md                 
 ```
 
-## Funzionalità Principali
+## Core Features
 
-- **Punto di Ingresso Unico**: `main.py` nella root del progetto orchestra l'intero flusso di lavoro.
-- **Moduli Indipendenti**: Ogni funzionalità chiave (caricamento dati, preprocessing, classificazione, ecc.) è incapsulata nel proprio modulo Python (package), facilitando la manutenibilità e l'espandibilità.
-    - `data_loader`: Legge dati da file CSV.
-    - `preprocessor`: Gestisce la pulizia base e la suddivisione dei dati.
-    - `classifier`: Addestra e valuta modelli XGBoost, CatBoost, Random Forest.
-    - `calibration`: Calibra le probabilità dei modelli.
-    - `explainer`: Fornisce interpretabilità tramite SHAP.
-    - `genetic_algorithm`: Contiene una classe di esempio per un algoritmo genetico.
-    - `bayesian_methods`: Contiene una classe di esempio per metodi bayesiani.
-- **Esempio Funzionante**: `main.py` include la creazione di un dataset di esempio e l'esecuzione di un pipeline completo con tutti i moduli.
+- **Unsupervised Learning Pipeline**: Complete workflow for anomaly detection using dimensional reduction and clustering.
+- **Genetic Algorithm for PCA Optimization**: Automatically determines the optimal number of principal components to maximize clustering quality.
+- **Configurable via YAML**: All parameters can be adjusted through a simple configuration file.
+- **Modular Architecture**: Each key functionality is encapsulated in its own Python module:
+    - `data_loader`: Reads data from CSV files.
+    - `preprocessor`: Handles data cleaning and scaling for unsupervised learning.
+    - `clustering`: Implements PCA and DBSCAN algorithms with evaluation metrics.
+    - `genetic_algorithm`: Contains the genetic algorithm for optimizing PCA component selection.
+- **Visual Output**: Generates plots of clusters and anomalies, along with GA fitness evolution.
 
-## Come Iniziare
+## Getting Started
 
-1.  **Clonare il repository (o scaricare i file).**
-2.  **Creare un ambiente virtuale (consigliato):**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # Su Windows: venv\Scripts\activate
-    ```
-3.  **Installare le dipendenze:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Preparare i dati (Opzionale, se non si usa l'esempio):**
-    -   Se si desidera utilizzare un proprio dataset, inserire il file CSV nella cartella `data/`.
-    -   Aggiornare il percorso del file (`file_path`) e il nome della colonna target (`target_column`) in `main.py`.
-5.  **Eseguire il pipeline:**
-    ```bash
-    python main.py
-    ```
-    Questo eseguirà il pipeline utilizzando il file `data/esempio.csv` creato automaticamente se non esiste.
+1. **Clone or download the repository**
+2. **Create a virtual environment (recommended):**
+   ```bash
+   python -m venv venv
+   # On Windows:
+   venv\Scripts\activate
+   # On Unix/MacOS:
+   source venv/bin/activate
+   ```
+3. **Install the dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. **Prepare your data:**
+   - Place your CSV file(s) in the `data/` folder
+   - Modify `config.yaml` to specify your data source
+5. **Configure the pipeline:**
+   - Adjust DBSCAN parameters in `config.yaml`
+   - Choose whether to use GA for PCA optimization or manual settings
+6. **Run the pipeline:**
+   ```bash
+   python main.py
+   ```
 
-## Moduli Dettagliati
+## Configuration Options
 
-Ciascun modulo nella struttura (es. `data_loader`, `preprocessor`, ecc.) è un package Python contenente:
--   `__init__.py`: Rende la cartella un package e gestisce le importazioni principali dal modulo (es. `from .data_loader import load_csv`).
--   Un file `.py` con l'implementazione logica (es. `data_loader.py`).
+The pipeline is configured through `config.yaml`, which offers the following settings:
 
-Consultare il codice sorgente all'interno di ciascun modulo e il file `main.py` per i dettagli di implementazione e di interazione tra i moduli.
+- **Data loading options**: Set folder path and specify a single file or use all CSV files
+- **Preprocessing**: Choose between StandardScaler or MinMaxScaler
+- **PCA optimization**: Enable/disable genetic algorithm, or set manual PCA components
+- **Genetic algorithm parameters**: Configure population size, generations, mutation rates
+- **Clustering parameters**: Set DBSCAN eps and min_samples values
 
-## TODO / Prossimi Passi
+## Modules in Detail
 
--   Espandere le funzionalità dei moduli `genetic_algorithm` e `bayesian_methods` con logiche più complesse.
--   Implementare la logica per salvare e caricare i modelli addestrati nella cartella `models/`.
--   Aggiungere la gestione degli argomenti da riga di comando (es. con `argparse`) in `main.py`.
--   Sviluppare test unitari e di integrazione nella cartella `tests/`.
--   Migliorare le strategie di preprocessing, validazione incrociata e ricerca degli iperparametri.
+- **data_loader**: Handles loading CSV files from a directory or specific file
+- **preprocessor**: Performs data cleaning, selects numeric features, and applies scaling  
+- **clustering**: Implements PCA for dimensionality reduction, DBSCAN for clustering, and evaluation metrics
+- **genetic_algorithm**: Contains the GeneticPCAOptimizer class that optimizes PCA components based on clustering quality
 
-## Contributi
+The generated results include annotated data with cluster labels and anomaly flags, as well as visualizations of the clusters and potential anomalies.
 
-Sentitevi liberi di contribuire al progetto aprendo issue o pull request.
+## Output
 
+The pipeline produces:
+- CSV file with original data plus cluster labels and anomaly flags
+- 2D visualization of clusters with highlighted anomalies
+- GA fitness evolution plot (when genetic algorithm is enabled)
+
+## Next Steps
+
+- Expand the functionality of the `bayesian_methods` module
+- Add command line argument support in `main.py`
+- Develop unit tests and integration tests
+- Implement additional clustering algorithms beyond DBSCAN
+- Add more advanced anomaly detection techniques
+
+## Contributions
+
+Feel free to contribute to the project by opening issues or pull requests.

@@ -109,13 +109,10 @@ def evaluate_combined_score(silhouette, davies_bouldin, formula="S - DB"):
         return S - (DB / 10 if DB > 1 else DB) # Try to scale DB down if it's large to not overly dominate S
     elif formula == "S / (1 + DB)":
         if DB == float('inf'): return -1.0 # Silhouette / infinity -> 0, but -1 is worse for no clusters
-        return S / (1 + max(0, DB)) # Ensure 1+DB is not zero
-    # Add more complex formulas with normalization if needed
+        return S / (1 + max(0, DB)) 
     else: # Default to Silhouette if formula is unknown
         console.print(f"[yellow]Unknown combined_score_formula: '{formula}'. Defaulting to Silhouette score.[/yellow]")
         return S
-
-
 
 
 def main():
