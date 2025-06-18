@@ -299,6 +299,11 @@ def main():
                 # Use the same data that was used for clustering
                 bayesian_detector.fit(X_for_clustering)
             
+            # Visualize the Bayesian network structure if it was created
+            if bayesian_detector.selected_method == "bayesian_network" and bayesian_detector.model is not None:
+                console.print("\n[bold magenta]Visualizing Bayesian Network Structure:[/bold magenta]")
+                bayesian_detector.visualize_network(save_path="models/bayesian_network_structure.png")
+            
             # Get anomaly scores and predictions
             with console.status("[bold magenta]Calculating anomaly scores...[/bold magenta]", spinner="dots"):
                 bayesian_scores = bayesian_detector.predict_proba(X_for_clustering)
@@ -349,6 +354,8 @@ def main():
             console.print("[yellow]Make sure pgmpy and scikit-learn are installed[/yellow]")
         except Exception as e:
             console.print(f"[bold red]ERROR in Bayesian anomaly detection: {str(e)}[/bold red]")
+            import traceback
+            console.print(f"[yellow]Traceback: {traceback.format_exc()}[/yellow]")
             console.print("[yellow]Continuing with DBSCAN results only[/yellow]")
 
     # 6. Plot Clusters (highlighting anomalies)

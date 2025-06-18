@@ -2,14 +2,14 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import KernelDensity
 from pgmpy.models import BayesianNetwork
-from pgmpy.estimators import HillClimbSearch, BicScore, MaximumLikelihoodEstimator
+from pgmpy.estimators import HillClimbSearch, BicScore, K2Score, MaximumLikelihoodEstimator
 from pgmpy.inference import VariableElimination
+from pgmpy.factors.discrete import TabularCPD
 from rich.console import Console
 import matplotlib.pyplot as plt
-from rich.progress import Progress, SpinnerColumn, TextColumn
 import networkx as nx
-from matplotlib.patches import FancyBboxPatch
-import matplotlib.patches as mpatches
+from rich.progress import Progress, SpinnerColumn, TextColumn
+import warnings
 
 console = Console()
 
@@ -45,233 +45,8 @@ class BayesianAnomalyDetector:
         self.selected_method = None
         self.feature_names = None
         self.thresholds = None
-        
-    def plot_bayesian_network(self, title="Learned Bayesian Network Structure", 
-                             save_path=None, figsize=(12, 8), show_cpd_info=True):
-        """
-        Plot the learned Bayesian network structure with enhanced visualization.
-        
-        Parameters:
-        -----------
-        title : str
-            Title for the plot
-        save_path : str, optional
-            Path to save the plot
-        figsize : tuple
-            Figure size (width, height)
-        show_cpd_info : bool
-            Whether to show conditional probability distribution info
-        """
-        if self.selected_method != "bayesian_network" or self.model is None:
-            console.print("[yellow]⚠️ No Bayesian network to plot. Either method is not 'bayesian_network' or model failed to train.[/yellow]")
-            return
-        
-        if not self.model.edges():
-            console.print("[yellow]⚠️ Bayesian network has no edges to plot (independent variables).[/yellow]")
-            return
-        
-        # Create the plot
-        fig, ax = plt.subplots(figsize=figsize)
-        
-        # Convert pgmpy model to NetworkX graph
-        G = nx.DiGraph()
-        G.add_nodes_from(self.model.nodes())
-        G.add_edges_from(self.model.edges())
-        
-        # Choose layout based on number of nodes
-        n_nodes = len(G.nodes())
-        
-        if n_nodes <= 6:
-            # Use circular layout for small networks
-            pos = nx.circular_layout(G, scale=2)
-        elif n_nodes <= 12:
-            # Use spring layout for medium networks
-            pos = nx.spring_layout(G, k=3, iterations=50, seed=self.random_state)
-        else:
-            # Use hierarchical layout for larger networks
-            try:
-                pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
-            except:
-                # Fallback to spring layout if graphviz not available
-                pos = nx.spring_layout(G, k=2, iterations=30, seed=self.random_state)
-        
-        # Draw edges with arrows
-        nx.draw_networkx_edges(G, pos, edge_color='gray', arrows=True, 
-                              arrowsize=20, arrowstyle='->', width=2,
-                              connectionstyle="arc3,rad=0.1", alpha=0.7)
-        
-        # Prepare node information
-        node_info = {}
-        node_colors = []
-        node_sizes = []
-        
-        for node in G.nodes():
-            # Get parents and children
-            parents = list(G.predecessors(node))
-            children = list(G.successors(node))
-            
-            # Color nodes based on their role
-            if not parents and children:  # Root nodes (no parents, has children)
-                color = 'lightcoral'
-                size = 3000
-            elif parents and children:    # Intermediate nodes
-                color = 'lightblue'
-                size = 2500
-            elif parents and not children:  # Leaf nodes
-                color = 'lightgreen'
-                size = 2000
-            else:  # Isolated nodes
-                color = 'lightgray'
-                size = 1500
-            
-            node_colors.append(color)
-            node_sizes.append(size)
-            
-            # Store info for potential display
-            node_info[node] = {
-                'parents': parents,
-                'children': children,
-                'n_parents': len(parents),
-                'n_children': len(children)
-            }
-        
-        # Draw nodes
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors, 
-                              node_size=node_sizes, alpha=0.8,
-                              edgecolors='black', linewidths=2)
-        
-        # Draw labels with better formatting
-        labels = {}
-        for node in G.nodes():
-            # Truncate long variable names for better display
-            display_name = node if len(node) <= 10 else node[:8] + ".."
-            labels[node] = display_name
-        
-        nx.draw_networkx_labels(G, pos, labels, font_size=10, 
-                               font_weight='bold', font_color='black')
-        
-        # Add title and information
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
-        
-        # Create legend
-        legend_elements = [
-            mpatches.Patch(color='lightcoral', label='Root Nodes (no parents)'),
-            mpatches.Patch(color='lightblue', label='Intermediate Nodes'),
-            mpatches.Patch(color='lightgreen', label='Leaf Nodes (no children)'),
-            mpatches.Patch(color='lightgray', label='Isolated Nodes')
-        ]
-        ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0, 1))
-        
-        # Add network statistics as text
-        stats_text = (
-            f"Network Statistics:\n"
-            f"• Nodes: {len(G.nodes())}\n"
-            f"• Edges: {len(G.edges())}\n"
-            f"• Density: {nx.density(G):.3f}\n"
-            f"• Max Parents: {max([node_info[n]['n_parents'] for n in G.nodes()], default=0)}\n"
-            f"• Max Children: {max([node_info[n]['n_children'] for n in G.nodes()], default=0)}"
-        )
-        
-        # Add text box with statistics
-        props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
-        ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=10,
-                verticalalignment='bottom', bbox=props)
-        
-        # Show conditional probability information if requested
-        if show_cpd_info and hasattr(self.model, 'cpds') and self.model.cpds:
-            cpd_info = f"CPDs learned: {len(self.model.cpds)}"
-            ax.text(0.98, 0.02, cpd_info, transform=ax.transAxes, fontsize=10,
-                   verticalalignment='bottom', horizontalalignment='right',
-                   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
-        
-        # Remove axes
-        ax.set_axis_off()
-        
-        # Adjust layout to prevent clipping
-        plt.tight_layout()
-        
-        # Save if requested
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight', 
-                       facecolor='white', edgecolor='none')
-            console.print(f"[green]✓ Bayesian network plot saved to [bold]{save_path}[/bold][/green]")
-        
-        plt.show()
-        
-        # Print detailed node information
-        console.print("\n[bold]Bayesian Network Structure Details:[/bold]")
-        for node in sorted(G.nodes()):
-            info = node_info[node]
-            parents_str = ", ".join(info['parents']) if info['parents'] else "None"
-            children_str = ", ".join(info['children']) if info['children'] else "None"
-            console.print(f"[cyan]{node}:[/cyan] Parents: [{parents_str}] → Children: [{children_str}]")
-    
-    def plot_network_comparison(self, save_path=None, figsize=(15, 6)):
-        """
-        Plot comparison between the learned network and a naive Bayes structure.
-        
-        Parameters:
-        -----------
-        save_path : str, optional
-            Path to save the plot
-        figsize : tuple
-            Figure size (width, height)
-        """
-        if self.selected_method != "bayesian_network" or self.model is None:
-            console.print("[yellow]⚠️ No Bayesian network available for comparison.[/yellow]")
-            return
-        
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-        
-        # Plot 1: Learned network
-        G_learned = nx.DiGraph()
-        G_learned.add_nodes_from(self.model.nodes())
-        G_learned.add_edges_from(self.model.edges())
-        
-        if G_learned.edges():
-            pos1 = nx.spring_layout(G_learned, seed=self.random_state)
-            nx.draw(G_learned, pos1, ax=ax1, with_labels=True, node_color='lightblue',
-                   node_size=2000, font_size=8, font_weight='bold', arrows=True,
-                   edge_color='gray', arrowsize=20)
-            ax1.set_title("Learned Bayesian Network", fontweight='bold')
-        else:
-            ax1.text(0.5, 0.5, "No edges learned\n(Independent variables)", 
-                    ha='center', va='center', transform=ax1.transAxes,
-                    fontsize=12, bbox=dict(boxstyle='round', facecolor='wheat'))
-            ax1.set_title("Learned Network (No Dependencies)", fontweight='bold')
-        
-        # Plot 2: Naive Bayes equivalent
-        G_naive = nx.DiGraph()
-        nodes = list(self.model.nodes())
-        G_naive.add_nodes_from(nodes)
-        
-        if len(nodes) > 1:
-            # Create naive Bayes structure (star topology)
-            root = nodes[0]
-            naive_edges = [(root, node) for node in nodes[1:]]
-            G_naive.add_edges_from(naive_edges)
-            
-            pos2 = nx.spring_layout(G_naive, seed=self.random_state)
-            nx.draw(G_naive, pos2, ax=ax2, with_labels=True, node_color='lightcoral',
-                   node_size=2000, font_size=8, font_weight='bold', arrows=True,
-                   edge_color='gray', arrowsize=20)
-        
-        ax2.set_title("Naive Bayes Structure\n(for comparison)", fontweight='bold')
-        
-        # Add comparison statistics
-        learned_edges = len(G_learned.edges())
-        naive_edges = len(G_naive.edges())
-        
-        fig.suptitle(f"Structure Comparison: Learned ({learned_edges} edges) vs Naive Bayes ({naive_edges} edges)",
-                    fontsize=14, fontweight='bold')
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            console.print(f"[green]✓ Network comparison plot saved to [bold]{save_path}[/bold][/green]")
-        
-        plt.show()
+        self.discrete_data = None
+        self.bins = {}
         
     def _prepare_data_for_bn(self, X):
         """Convert continuous data to discrete for Bayesian Network with better sensitivity"""
@@ -279,40 +54,134 @@ class BayesianAnomalyDetector:
         df_discrete = pd.DataFrame(index=X.index)
         self.bins = {}
         
-        # First, calculate how many bins to use based on data size
+        # Calculate optimal number of bins based on data characteristics
         n_samples = len(X)
-        # Aim for approximately sqrt(n) bins but cap it between 3 and 8
-        optimal_bins = max(3, min(8, int(np.sqrt(n_samples/10))))
-        
-        console.print(f"[cyan]Discretizing data into {optimal_bins} bins per feature...[/cyan]")
         
         for col in X.columns:
             # Skip columns with too few unique values
             unique_values = X[col].nunique()
             if unique_values <= 1:
+                console.print(f"[yellow]Skipping column '{col}' - only {unique_values} unique value(s)[/yellow]")
                 continue
+            
+            # Adaptive binning based on data distribution
+            if unique_values <= 5:
+                # Already discrete-like
+                df_discrete[col] = X[col].astype('category')
+                console.print(f"[cyan]Column '{col}' treated as categorical ({unique_values} unique values)[/cyan]")
+            else:
+                # Use Sturges' rule for bin count, but cap it
+                n_bins = min(int(np.ceil(np.log2(n_samples) + 1)), 10, unique_values)
+                n_bins = max(3, n_bins)  # At least 3 bins
                 
-            # For better anomaly detection, use more bins for features with more variation
-            bins = min(optimal_bins, unique_values)
-            
-            # Create labels for the bins
-            labels = [f"{col}_{i}" for i in range(bins)]
-            
-            try:
-                # Use qcut for equal-frequency binning, handle potential errors
-                df_discrete[col], self.bins[col] = pd.qcut(X[col], q=bins, labels=labels, 
-                                                        retbins=True, duplicates='drop')
-            except ValueError:
-                # If qcut fails (e.g. too many identical values), use cut
-                df_discrete[col], self.bins[col] = pd.cut(X[col], bins=bins, labels=labels,
-                                                        retbins=True, duplicates='drop')
+                try:
+                    # Try quantile-based binning first for better distribution
+                    df_discrete[col], self.bins[col] = pd.qcut(
+                        X[col], 
+                        q=n_bins, 
+                        labels=[f"{col}_bin{i}" for i in range(n_bins)],
+                        retbins=True, 
+                        duplicates='drop'
+                    )
+                except ValueError:
+                    # Fall back to equal-width binning
+                    df_discrete[col], self.bins[col] = pd.cut(
+                        X[col], 
+                        bins=n_bins, 
+                        labels=[f"{col}_bin{i}" for i in range(n_bins)],
+                        retbins=True,
+                        include_lowest=True
+                    )
+                
+                console.print(f"[cyan]Column '{col}' discretized into {len(df_discrete[col].cat.categories)} bins[/cyan]")
         
-        # Handle empty dataframe (all columns had too few unique values)
+        # Handle empty dataframe
         if df_discrete.empty:
             raise ValueError("No suitable columns for discretization")
-            
+        
+        # Store for later use
+        self.discrete_data = df_discrete
         return df_discrete
         
+    def _create_initial_network_structure(self, X_discrete, max_parents=3):
+        """Create an initial network structure using domain knowledge or heuristics"""
+        variables = list(X_discrete.columns)
+        n_vars = len(variables)
+        
+        if n_vars < 2:
+            raise ValueError("Need at least 2 variables for Bayesian network")
+        
+        edges = []
+        parent_count = {var: 0 for var in variables}
+        
+        # Strategy 1: Create a tree structure based on correlation
+        if n_vars <= 10:
+            # Calculate mutual information or correlation between variables
+            correlation_matrix = pd.DataFrame(index=variables, columns=variables, dtype=float)
+            
+            for i, var1 in enumerate(variables):
+                for j, var2 in enumerate(variables):
+                    if i != j:
+                        # Use cramers V for categorical association
+                        contingency = pd.crosstab(X_discrete[var1], X_discrete[var2])
+                        chi2 = np.sum((contingency - contingency.sum(1).values[:, None] * contingency.sum(0).values / contingency.sum().sum()) ** 2 / 
+                                     (contingency.sum(1).values[:, None] * contingency.sum(0).values / contingency.sum().sum()))
+                        correlation_matrix.loc[var1, var2] = chi2 / (len(X_discrete) * min(len(X_discrete[var1].cat.categories) - 1, 
+                                                                                          len(X_discrete[var2].cat.categories) - 1))
+            
+            # Create maximum spanning tree with parent limit
+            visited = set()
+            edges_weights = []
+            
+            for i, var1 in enumerate(variables):
+                for j, var2 in enumerate(variables[i+1:], i+1):
+                    weight = correlation_matrix.loc[var1, var2]
+                    if not np.isnan(weight):
+                        edges_weights.append((weight, var1, var2))
+            
+            edges_weights.sort(reverse=True)
+            
+            # Modified Kruskal's algorithm with parent limit
+            parent = {v: v for v in variables}
+            
+            def find(v):
+                if parent[v] != v:
+                    parent[v] = find(parent[v])
+                return parent[v]
+            
+            def union(v1, v2):
+                root1, root2 = find(v1), find(v2)
+                if root1 != root2:
+                    parent[root1] = root2
+                    return True
+                return False
+            
+            for weight, var1, var2 in edges_weights:
+                # Check parent constraints before adding edge
+                if parent_count[var2] < max_parents and union(var1, var2):
+                    edges.append((var1, var2))
+                    parent_count[var2] += 1
+                    if len(edges) == n_vars - 1:
+                        break
+                elif parent_count[var1] < max_parents and union(var2, var1):
+                    edges.append((var2, var1))
+                    parent_count[var1] += 1
+                    if len(edges) == n_vars - 1:
+                        break
+        
+        # Strategy 2: For larger networks, use a simpler structure with parent limit
+        else:
+            # Create a layered structure
+            layer_size = int(np.sqrt(n_vars))
+            for i in range(n_vars):
+                # Connect to up to max_parents previous nodes
+                for j in range(max(0, i - max_parents), i):
+                    if parent_count[variables[i]] < max_parents:
+                        edges.append((variables[j], variables[i]))
+                        parent_count[variables[i]] += 1
+        
+        return edges
+    
     def fit(self, X):
         """
         Fit a Bayesian network or KDE to the data
@@ -328,9 +197,9 @@ class BayesianAnomalyDetector:
         self.feature_names = X.columns
         n_samples, n_features = X.shape
         
-        # Automatically select method based on data characteristics if method='auto'
+        # Automatically select method based on data characteristics
         if self.method == "auto":
-            if n_features <= 10 and n_samples >= 200:
+            if n_features <= 15 and n_samples >= 100:
                 self.selected_method = "bayesian_network"
             else:
                 self.selected_method = "kde"
@@ -344,117 +213,144 @@ class BayesianAnomalyDetector:
             transient=True,
         ) as progress:
             if self.selected_method == "bayesian_network":
-                progress.add_task(description="Learning Bayesian network structure...", total=None)
+                task = progress.add_task(description="Learning Bayesian network structure...", total=None)
                 self._fit_bayesian_network(X)
-            else:  # Default to KDE for high-dimensional data
-                progress.add_task(description="Fitting kernel density estimation...", total=None)
+                progress.remove_task(task)
+            else:
+                task = progress.add_task(description="Fitting kernel density estimation...", total=None)
                 self._fit_kde(X)
+                progress.remove_task(task)
                 
         return self
         
     def _fit_bayesian_network(self, X):
-        """Fit a Bayesian network to the data"""
+        """Fit a Bayesian network to the data with improved structure learning"""
         try:
-            # For Bayesian Network, we need discrete data
+            # Prepare discrete data
             X_discrete = self._prepare_data_for_bn(X)
             
-            # Learn network structure
             console.print("[cyan]Learning Bayesian network structure...[/cyan]")
-            hc = HillClimbSearch(X_discrete)
-            model = hc.estimate(scoring_method=BicScore(X_discrete))
             
-            if not model.edges():
-                console.print("[yellow]Warning: No edges found in Bayesian network, using naive Bayes structure[/yellow]")
-                # Create a naive Bayes structure (first variable is "root")
-                edges = []
-                if len(X_discrete.columns) >= 2:
-                    root = X_discrete.columns[0]
-                    for col in X_discrete.columns[1:]:
-                        edges.append((root, col))
-                    model = BayesianNetwork(edges)
+            # Try multiple scoring methods
+            model = None
+            best_score = -np.inf
+            
+            # Method 1: Hill Climbing with BIC score
+            try:
+                hc_bic = HillClimbSearch(X_discrete)
+                # Estimate returns a DAG, we need to convert to BayesianNetwork
+                dag_bic = hc_bic.estimate(
+                    scoring_method=BicScore(X_discrete),
+                    max_indegree=3,  # Maximum 3 parents per node
+                    max_iter=100,    # Reduced iterations for faster convergence
+                    epsilon=1e-4
+                )
+                
+                # Convert DAG to BayesianNetwork
+                model_bic = BayesianNetwork(dag_bic.edges())
+                
+                # Calculate BIC score
+                bic = BicScore(X_discrete)
+                score_bic = bic.score(model_bic)
+                
+                if score_bic > best_score:
+                    best_score = score_bic
+                    model = model_bic
+                    console.print(f"[green]Hill Climbing with BIC found network with score: {score_bic:.2f}[/green]")
+            except Exception as e:
+                console.print(f"[yellow]Hill Climbing with BIC failed: {e}[/yellow]")
+            
+            # Method 2: Hill Climbing with K2 score
+            try:
+                hc_k2 = HillClimbSearch(X_discrete)
+                # Estimate returns a DAG, we need to convert to BayesianNetwork
+                dag_k2 = hc_k2.estimate(
+                    scoring_method=K2Score(X_discrete),
+                    max_indegree=3,  # Maximum 3 parents per node
+                    max_iter=100     # Reduced iterations for faster convergence
+                )
+                
+                # Convert DAG to BayesianNetwork
+                model_k2 = BayesianNetwork(dag_k2.edges())
+                
+                # Calculate K2 score
+                k2 = K2Score(X_discrete)
+                score_k2 = k2.score(model_k2)
+                
+                if score_k2 > best_score:
+                    best_score = score_k2
+                    model = model_k2
+                    console.print(f"[green]Hill Climbing with K2 found network with score: {score_k2:.2f}[/green]")
+            except Exception as e:
+                console.print(f"[yellow]Hill Climbing with K2 failed: {e}[/yellow]")
+            
+            # If no edges found or model is None, create initial structure
+            if model is None or not model.edges():
+                console.print("[yellow]No structure found by search algorithms. Creating initial structure...[/yellow]")
+                initial_edges = self._create_initial_network_structure(X_discrete, max_parents=3)
+                model = BayesianNetwork(initial_edges)
+                console.print(f"[green]Created initial network with {len(initial_edges)} edges[/green]")
             
             self.model = model
-            console.print(f"[green]✓ Bayesian network structure learned with {len(model.edges())} edges[/green]")
             
-            # Correctly fit parameters (CPTs)
-            console.print("[cyan]Estimating conditional probability tables...[/cyan]")
-            estimator = MaximumLikelihoodEstimator(self.model, X_discrete)
-            self.model.cpds = estimator.get_parameters()
+            # Fit parameters (CPDs)
+            console.print("[cyan]Learning conditional probability distributions...[/cyan]")
+            # Use MaximumLikelihoodEstimator to fit the model
+            mle = MaximumLikelihoodEstimator(self.model, X_discrete)
+            
+            # Estimate CPDs for all nodes
+            for node in self.model.nodes():
+                try:
+                    cpd = mle.estimate_cpd(node)
+                    if cpd is not None:
+                        self.model.add_cpds(cpd)
+                    else:
+                        console.print(f"[yellow]Warning: Could not estimate CPD for node {node}[/yellow]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Error estimating CPD for node {node}: {e}[/yellow]")
+            
+            # Check if the model is valid
+            try:
+                if self.model.check_model():
+                    console.print("[green]✓ Model validation passed[/green]")
+                else:
+                    console.print("[yellow]Warning: Model validation failed, but continuing...[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not validate model: {e}[/yellow]")
+            
+            # Verify CPDs are properly set
+            for node in self.model.nodes():
+                cpd = self.model.get_cpds(node)
+                if cpd is None:
+                    console.print(f"[red]Warning: No CPD for node {node}[/red]")
             
             # Setup inference engine
             self.inference = VariableElimination(self.model)
             
-            # Calculate log-likelihoods for training data to determine thresholds
+            # Calculate log-likelihoods for threshold
             log_likelihoods = self._calculate_log_likelihood(X)
             self.threshold = np.percentile(log_likelihoods, 100 - self.threshold_percentile)
             
-            console.print(f"[green]✓ Bayesian network model trained. Anomaly threshold: {self.threshold:.4f}[/green]")
+            console.print(f"[green]✓ Bayesian network trained with {len(self.model.edges())} edges[/green]")
+            console.print(f"[green]✓ Anomaly threshold: {self.threshold:.4f}[/green]")
             
         except Exception as e:
             console.print(f"[bold red]Error fitting Bayesian network: {e}[/bold red]")
-            # Only fall back to KDE if auto-selection was chosen
-            if self.method == "auto":
-                console.print("[yellow]Falling back to kernel density estimation...[/yellow]")
-                self.selected_method = "kde"
-                self._fit_kde(X)
-            else:
-                # If specific method was requested, use simpler BN or report failure
-                console.print("[yellow]Attempting with simpler Bayesian structure...[/yellow]")
-                try:
-                    self._fit_simple_bayesian_network(X)
-                except Exception as e2:
-                    console.print(f"[bold red]Error fitting simple Bayesian network: {e2}[/bold red]")
-                    # Set fallback method
-                    self.selected_method = "fallback"
-                    self.model = None
-    
-    def _fit_simple_bayesian_network(self, X):
-        """Fit a simpler Bayesian network when the hill-climbing approach fails"""
-        # For Bayesian Network, we need discrete data
-        X_discrete = self._prepare_data_for_bn(X)
-        
-        # Create a simple naive Bayes network
-        if len(X_discrete.columns) < 2:
-            raise ValueError("Need at least 2 columns for a Bayesian network")
-            
-        # Choose first column as root
-        root = X_discrete.columns[0]
-        edges = [(root, col) for col in X_discrete.columns[1:]]
-        
-        # Create the model
-        self.model = BayesianNetwork(edges)
-        console.print(f"[yellow]Created simple naive Bayes network with {len(edges)} edges[/yellow]")
-        
-        # Fit parameters
-        estimator = MaximumLikelihoodEstimator(self.model, X_discrete)
-        self.model.cpds = estimator.get_parameters()
-        
-        # Setup inference
-        self.inference = VariableElimination(self.model)
-        
-        # Calculate log-likelihoods and threshold
-        log_likelihoods = self._calculate_log_likelihood(X)
-        self.threshold = np.percentile(log_likelihoods, 100 - self.threshold_percentile)
-        
-        console.print(f"[green]✓ Simple Bayesian network trained. Anomaly threshold: {self.threshold:.4f}[/green]")
+            raise
     
     def _fit_kde(self, X):
         """Fit a kernel density estimator to the data"""
         try:
-            # For KDE, use standardized continuous data
             X_np = X.values
             
             # Calculate optimal bandwidth using Scott's rule
             n_samples, n_dims = X_np.shape
             bandwidth = n_samples ** (-1. / (n_dims + 4))
             
-            # Create and fit KDE model - Compatible with older scikit-learn versions
+            # Create and fit KDE model
             try:
-                # Try with random_state parameter (newer scikit-learn)
-                self.kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth, random_state=self.random_state)
+                self.kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth)
             except TypeError:
-                # Fall back to version without random_state (older scikit-learn)
-                console.print("[yellow]Using older scikit-learn KDE implementation[/yellow]")
                 self.kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth)
                 
             self.kde.fit(X_np)
@@ -467,10 +363,68 @@ class BayesianAnomalyDetector:
             
         except Exception as e:
             console.print(f"[bold red]Error fitting KDE model: {e}[/bold red]")
-            # Return simple model as fallback
-            self.kde = None
-            self.selected_method = "fallback"
-            return None
+            raise
+    
+    def visualize_network(self, save_path=None, figsize=(12, 8)):
+        """
+        Visualize the Bayesian network structure
+        
+        Parameters:
+        -----------
+        save_path : str, optional
+            Path to save the visualization
+        figsize : tuple
+            Figure size for the plot
+        """
+        if self.selected_method != "bayesian_network" or self.model is None:
+            console.print("[yellow]No Bayesian network to visualize[/yellow]")
+            return
+        
+        # Create a directed graph
+        G = nx.DiGraph()
+        G.add_edges_from(self.model.edges())
+        
+        plt.figure(figsize=figsize)
+        
+        # Calculate layout
+        if len(self.model.nodes()) <= 10:
+            pos = nx.spring_layout(G, k=3, iterations=50, seed=42)
+        else:
+            pos = nx.kamada_kawai_layout(G)
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(G, pos, node_color='lightblue', 
+                              node_size=3000, alpha=0.9)
+        
+        # Draw edges
+        nx.draw_networkx_edges(G, pos, edge_color='gray', 
+                              arrows=True, arrowsize=20, 
+                              arrowstyle='->', width=2)
+        
+        # Draw labels
+        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
+        
+        plt.title("Bayesian Network Structure", fontsize=16, fontweight='bold')
+        plt.axis('off')
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            console.print(f"[green]✓ Network visualization saved to [bold]{save_path}[/bold][/green]")
+        
+        plt.show()
+        
+        # Print network statistics
+        console.print(f"\n[bold]Network Statistics:[/bold]")
+        console.print(f"  Nodes: {len(self.model.nodes())}")
+        console.print(f"  Edges: {len(self.model.edges())}")
+        console.print(f"  Average degree: {2 * len(self.model.edges()) / len(self.model.nodes()):.2f}")
+        
+        # Print Markov blanket for each node
+        console.print(f"\n[bold]Markov Blankets:[/bold]")
+        for node in self.model.nodes():
+            mb = self.model.get_markov_blanket(node)
+            console.print(f"  {node}: {list(mb)}")
     
     def _calculate_log_likelihood(self, X):
         """Calculate log-likelihood for data using Bayesian network"""
@@ -480,73 +434,43 @@ class BayesianAnomalyDetector:
         X_discrete = self._prepare_data_for_bn(X)
         log_likelihoods = []
         
-        # Instead of calculating per instance, calculate joint probabilities for all variables
-        # This is more efficient and gives better results
-        console.print("[cyan]Calculating log-likelihoods for all data points...[/cyan]")
+        console.print("[cyan]Calculating log-likelihoods...[/cyan]")
         
-        # Get all variables in the model
-        all_vars = self.model.nodes()
-        
-        for _, instance in X_discrete.iterrows():
-            # Filter valid evidence (non-missing values)
-            evidence = {col: val for col, val in instance.items() if pd.notna(val)}
-            if not evidence:
-                log_likelihoods.append(np.nan)
-                continue
-                
+        for idx, row in X_discrete.iterrows():
             try:
-                # Calculate joint log probability for this instance
                 log_prob = 0.0
                 
-                # For each variable, calculate P(var | parents(var))
-                for var in all_vars:
-                    if var not in evidence:
+                # Calculate joint log probability
+                for node in self.model.nodes():
+                    if pd.isna(row[node]):
                         continue
-                        
-                    # Get parents of this variable
-                    parents = self.model.get_parents(var)
                     
-                    # Get evidence for parents
-                    parent_evidence = {p: evidence[p] for p in parents if p in evidence}
+                    # Get CPD for this node
+                    cpd = self.model.get_cpds(node)
+                    if cpd is None:
+                        continue
                     
-                    # Get the CPD for this variable
-                    cpd = self.model.get_cpds(var)
+                    # Get parent values
+                    parents = self.model.get_parents(node)
+                    parent_values = []
                     
-                    # Calculate probability of this value given its parents
-                    prob = 0.1  # Default fallback
-                    
-                    try:
-                        # Get index of current value
-                        var_val = evidence[var]
-                        var_idx = cpd.state_names[var].index(var_val)
-                        
-                        # Get indices of parent values
-                        if parent_evidence:
-                            parent_idxs = [cpd.state_names[p].index(parent_evidence[p]) 
-                                        for p in parents if p in parent_evidence]
-                            # Get probability from CPD table using these indices
-                            if len(parent_idxs) == len(parents):
-                                prob_idx = tuple([var_idx] + parent_idxs)
-                                prob = max(cpd.values[prob_idx], 0.01)  # Ensure non-zero prob
-                            else:
-                                # If missing some parents, use average probability
-                                prob = np.mean(cpd.values[var_idx])
+                    for parent in cpd.variables[1:]:  # Skip the node itself
+                        if parent in row and not pd.isna(row[parent]):
+                            parent_values.append(row[parent])
                         else:
-                            # If no parents or missing parent values, use marginal
-                            prob = np.mean(cpd.values[var_idx])
-                            
-                    except (ValueError, IndexError, KeyError):
-                        # If lookup fails, use small probability
-                        prob = 0.05
+                            parent_values.append(cpd.state_names[parent][0])  # Default value
                     
-                    # Add log probability
-                    log_prob += np.log(max(prob, 1e-10))
-                    
+                    # Get probability
+                    try:
+                        prob = cpd.get_value(**{node: row[node], **dict(zip(cpd.variables[1:], parent_values))})
+                        log_prob += np.log(max(prob, 1e-10))
+                    except:
+                        log_prob += np.log(0.01)  # Default low probability
+                
                 log_likelihoods.append(log_prob)
                 
-            except Exception as e:
-                # If inference fails for this instance, use a default low likelihood
-                log_likelihoods.append(-100.0)
+            except Exception:
+                log_likelihoods.append(-100.0)  # Default low likelihood for errors
         
         return np.array(log_likelihoods)
     
@@ -564,82 +488,49 @@ class BayesianAnomalyDetector:
         anomaly_scores : numpy array
             Anomaly scores where higher values indicate more anomalous points
         """
-        try:
-            if isinstance(X, np.ndarray):
-                X = pd.DataFrame(X, columns=self.feature_names)
-                
-            if self.selected_method == "bayesian_network" and self.model is not None:
-                # For Bayesian network, calculate negative log-likelihood
-                log_likelihoods = self._calculate_log_likelihood(X)
-                # Convert log-likelihood to anomaly score (higher = more anomalous)
-                anomaly_scores = -log_likelihoods
-            elif self.kde is not None:
-                # For KDE, use negative log-density
-                X_np = X.values
-                anomaly_scores = -self.kde.score_samples(X_np)
-            elif self.selected_method == "fallback":
-                # Simple fallback: use Euclidean distance from mean
-                X_np = X.values
-                mean = np.mean(X_np, axis=0)
-                anomaly_scores = np.sqrt(np.sum((X_np - mean)**2, axis=1))
-            else:
-                console.print("[bold red]Error: No trained model available[/bold red]")
-                # Return random scores as last resort
-                anomaly_scores = np.random.rand(len(X))
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X, columns=self.feature_names)
             
-            # Min-max scale scores to [0,1] for easier interpretation
-            if len(anomaly_scores) > 0:  # Check to avoid empty array errors
-                min_score = np.nanmin(anomaly_scores)
-                max_score = np.nanmax(anomaly_scores)
-                if max_score > min_score:  # Check to avoid division by zero
-                    scaled_scores = (anomaly_scores - min_score) / (max_score - min_score)
-                else:
-                    scaled_scores = np.zeros_like(anomaly_scores)
-                
-                # Replace any NaNs with 0.5 (neutral anomaly score)
-                scaled_scores = np.nan_to_num(scaled_scores, nan=0.5)
-                return scaled_scores
+        if self.selected_method == "bayesian_network" and self.model is not None:
+            # For Bayesian network, calculate negative log-likelihood
+            log_likelihoods = self._calculate_log_likelihood(X)
+            # Convert log-likelihood to anomaly score (higher = more anomalous)
+            anomaly_scores = -log_likelihoods
+        elif self.kde is not None:
+            # For KDE, use negative log-density
+            X_np = X.values
+            anomaly_scores = -self.kde.score_samples(X_np)
+        else:
+            # Fallback
+            anomaly_scores = np.random.rand(len(X))
+        
+        # Normalize scores to [0, 1]
+        if len(anomaly_scores) > 0:
+            min_score = np.nanmin(anomaly_scores)
+            max_score = np.nanmax(anomaly_scores)
+            if max_score > min_score:
+                scaled_scores = (anomaly_scores - min_score) / (max_score - min_score)
             else:
-                return np.array([])
-        except Exception as e:
-            console.print(f"[bold red]Error calculating anomaly scores: {e}[/bold red]")
-            # Return neutral scores as fallback
-            return np.ones(len(X)) * 0.5
+                scaled_scores = np.zeros_like(anomaly_scores)
+            
+            scaled_scores = np.nan_to_num(scaled_scores, nan=0.5)
+            return scaled_scores
+        else:
+            return np.array([])
     
     def predict(self, X):
         """Predict if points are anomalies"""
-        try:
-            anomaly_scores = self.predict_proba(X)
-            
-            if self.selected_method == "bayesian_network" and self.model is not None:
-                # FIXED: For Bayesian network, higher score = more anomalous
-                # The issue was comparing with -self.threshold instead of the actual threshold
-                threshold = np.percentile(anomaly_scores, self.threshold_percentile)
-                labels = np.where(anomaly_scores > threshold, -1, 1)
-                
-            elif self.kde is not None:
-                # For KDE, higher score (lower density) = more anomalous
-                threshold = np.percentile(anomaly_scores, self.threshold_percentile)
-                labels = np.where(anomaly_scores > threshold, -1, 1)
-                
-            elif self.selected_method == "fallback":
-                # Simple fallback method
-                threshold = np.percentile(anomaly_scores, self.threshold_percentile)
-                labels = np.where(anomaly_scores > threshold, -1, 1)
-                
-            else:
-                # If no model is available, return all normal
-                labels = np.ones(len(X))
-                
-            # Print how many anomalies were detected
-            anomaly_count = np.sum(labels == -1)
-            console.print(f"[cyan]Bayesian detector found {anomaly_count} anomalies ({anomaly_count/len(labels)*100:.2f}%)[/cyan]")
-            
-            return labels
-        except Exception as e:
-            console.print(f"[bold red]Error in anomaly prediction: {e}[/bold red]")
-            # In case of any error, return all normal points
-            return np.ones(len(X))
+        anomaly_scores = self.predict_proba(X)
+        
+        # Determine threshold based on scores
+        threshold = np.percentile(anomaly_scores, self.threshold_percentile)
+        labels = np.where(anomaly_scores > threshold, -1, 1)
+        
+        # Print detection summary
+        anomaly_count = np.sum(labels == -1)
+        console.print(f"[cyan]Bayesian detector found {anomaly_count} anomalies ({anomaly_count/len(labels)*100:.2f}%)[/cyan]")
+        
+        return labels
     
     def plot_scores(self, X, title="Anomaly Scores Distribution", save_path=None):
         """Plot the distribution of anomaly scores"""
@@ -647,20 +538,42 @@ class BayesianAnomalyDetector:
         predictions = self.predict(X)
         
         plt.figure(figsize=(10, 6))
-        plt.hist(anomaly_scores, bins=50, alpha=0.7, color='skyblue')
-        plt.axvline(x=np.percentile(anomaly_scores, self.threshold_percentile), 
-                    color='r', linestyle='--', label=f'{self.threshold_percentile}% Threshold')
-        plt.title(title)
-        plt.xlabel("Anomaly Score")
-        plt.ylabel("Frequency")
+        
+        # Create bins for histogram
+        bins = np.linspace(0, 1, 50)
+        
+        # Plot histogram
+        n, bins, patches = plt.hist(anomaly_scores, bins=bins, alpha=0.7, color='skyblue', edgecolor='black')
+        
+        # Color anomalous bins differently
+        threshold = np.percentile(anomaly_scores, self.threshold_percentile)
+        for i, patch in enumerate(patches):
+            if bins[i] >= threshold:
+                patch.set_facecolor('salmon')
+        
+        plt.axvline(x=threshold, color='r', linestyle='--', linewidth=2,
+                    label=f'{self.threshold_percentile}% Threshold')
+        
+        plt.title(title, fontsize=14, fontweight='bold')
+        plt.xlabel("Anomaly Score", fontsize=12)
+        plt.ylabel("Frequency", fontsize=12)
         plt.legend()
         plt.grid(True, alpha=0.3)
+        
+        # Add text box with statistics
+        anomaly_count = np.sum(predictions == -1)
+        total_count = len(predictions)
+        textstr = f'Total Points: {total_count}\nAnomalies: {anomaly_count} ({anomaly_count/total_count*100:.1f}%)'
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=10,
+                verticalalignment='top', bbox=props)
+        
+        plt.tight_layout()
         
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             console.print(f"[green]✓ Anomaly score plot saved to [bold]{save_path}[/bold][/green]")
         
-        plt.tight_layout()
         plt.show()
         
         return anomaly_scores, predictions
@@ -670,7 +583,7 @@ class BayesianAnomalyDetector:
         bayesian_labels = self.predict(X)
         bayesian_scores = self.predict_proba(X)
         
-        # Convert to binary anomaly indicators (1 for anomaly, 0 for normal)
+        # Convert to binary anomaly indicators
         dbscan_anomalies = (dbscan_labels == -1).astype(int)
         bayesian_anomalies = (bayesian_labels == -1).astype(int)
         
@@ -679,67 +592,82 @@ class BayesianAnomalyDetector:
         agreement_count = np.sum(dbscan_anomalies == bayesian_anomalies)
         agreement_percentage = (agreement_count / total_points) * 100
         
-        # Points identified as anomalies by both methods
+        # Confusion matrix elements
         both_anomaly = np.sum((dbscan_anomalies == 1) & (bayesian_anomalies == 1))
-        
-        # Points identified as anomalies by only one method
         only_dbscan = np.sum((dbscan_anomalies == 1) & (bayesian_anomalies == 0))
         only_bayesian = np.sum((dbscan_anomalies == 0) & (bayesian_anomalies == 1))
-        
-        # Points identified as normal by both methods
         both_normal = np.sum((dbscan_anomalies == 0) & (bayesian_anomalies == 0))
         
-        # Create a plot comparing the methods
-        plt.figure(figsize=(12, 8))
+        # Create comparison visualization
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
         
-        # Scatter plot of points, colored by agreement/disagreement
-        if X.shape[1] >= 2:  # If data has at least 2 dimensions
-            # Use the first two dimensions for visualization
+        # Left plot: 2D visualization if possible
+        if X.shape[1] >= 2:
+            ax1 = axes[0]
+            
+            # Use first two dimensions
             x_col, y_col = 0, 1
             
-            # Create a categorical color map for the four scenarios
+            # Create color map
             colors = np.zeros(total_points, dtype=int)
             colors[(dbscan_anomalies == 0) & (bayesian_anomalies == 0)] = 0  # Both normal (green)
             colors[(dbscan_anomalies == 1) & (bayesian_anomalies == 1)] = 1  # Both anomaly (red)
             colors[(dbscan_anomalies == 1) & (bayesian_anomalies == 0)] = 2  # Only DBSCAN (blue)
             colors[(dbscan_anomalies == 0) & (bayesian_anomalies == 1)] = 3  # Only Bayesian (purple)
             
-            plt.scatter(X.iloc[:, x_col], X.iloc[:, y_col], c=colors, cmap='viridis', 
-                       alpha=0.7, s=50, edgecolors='none')
+            scatter = ax1.scatter(X.iloc[:, x_col], X.iloc[:, y_col], c=colors, 
+                                 cmap='viridis', alpha=0.7, s=50, edgecolors='none')
             
-            plt.xlabel(f"Feature {x_col}")
-            plt.ylabel(f"Feature {y_col}")
-            plt.title("Comparison of DBSCAN and Bayesian Anomaly Detection")
+            ax1.set_xlabel(f"Feature {x_col}")
+            ax1.set_ylabel(f"Feature {y_col}")
+            ax1.set_title("DBSCAN vs Bayesian Anomaly Detection")
+            ax1.grid(True, alpha=0.3)
             
             # Custom legend
             from matplotlib.lines import Line2D
             legend_elements = [
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='#440154', 
                       markersize=10, label='Both Normal'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='#31688e', 
                       markersize=10, label='Both Anomaly'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', 
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='#35b779', 
                       markersize=10, label='Only DBSCAN'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='purple', 
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='#fde725', 
                       markersize=10, label='Only Bayesian')
             ]
-            plt.legend(handles=legend_elements, loc='best')
-            
-        # Add a text box with statistics
-        stats_text = (
-            f"Total Points: {total_points}\n"
-            f"Agreement: {agreement_percentage:.1f}%\n"
-            f"Both Normal: {both_normal} ({both_normal/total_points*100:.1f}%)\n"
-            f"Both Anomaly: {both_anomaly} ({both_anomaly/total_points*100:.1f}%)\n"
-            f"Only DBSCAN: {only_dbscan} ({only_dbscan/total_points*100:.1f}%)\n"
-            f"Only Bayesian: {only_bayesian} ({only_bayesian/total_points*100:.1f}%)"
-        )
+            ax1.legend(handles=legend_elements, loc='best')
         
-        plt.figtext(0.92, 0.5, stats_text, bbox=dict(facecolor='white', alpha=0.8), 
-                  fontsize=10, ha='right')
+        # Right plot: Confusion matrix style visualization
+        ax2 = axes[1]
         
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        # Create confusion matrix
+        confusion_matrix = np.array([[both_normal, only_bayesian],
+                                    [only_dbscan, both_anomaly]])
+        
+        im = ax2.imshow(confusion_matrix, cmap='Blues', aspect='auto')
+        
+        # Add colorbar
+        plt.colorbar(im, ax=ax2)
+        
+        # Set ticks and labels
+        ax2.set_xticks([0, 1])
+        ax2.set_yticks([0, 1])
+        ax2.set_xticklabels(['Normal (Bayesian)', 'Anomaly (Bayesian)'])
+        ax2.set_yticklabels(['Normal (DBSCAN)', 'Anomaly (DBSCAN)'])
+        
+        # Add text annotations
+        for i in range(2):
+            for j in range(2):
+                text = ax2.text(j, i, f'{confusion_matrix[i, j]}\n({confusion_matrix[i, j]/total_points*100:.1f}%)',
+                               ha="center", va="center", color="black" if confusion_matrix[i, j] < confusion_matrix.max()/2 else "white")
+        
+        ax2.set_title("Method Agreement Matrix")
+        
+        # Add overall statistics
+        fig.suptitle(f"Anomaly Detection Comparison - Agreement: {agreement_percentage:.1f}%", 
+                    fontsize=16, fontweight='bold')
+        
+        plt.tight_layout()
         
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -747,13 +675,24 @@ class BayesianAnomalyDetector:
             
         plt.show()
         
-        # Print summary
+        # Print detailed summary
         console.print("\n[bold]Anomaly Detection Method Comparison:[/bold]")
         console.print(f"Agreement between methods: [cyan]{agreement_percentage:.1f}%[/cyan]")
         console.print(f"Points identified as normal by both: [green]{both_normal} ({both_normal/total_points*100:.1f}%)[/green]")
         console.print(f"Points identified as anomalies by both: [red]{both_anomaly} ({both_anomaly/total_points*100:.1f}%)[/red]")
         console.print(f"Points identified as anomalies only by DBSCAN: [blue]{only_dbscan} ({only_dbscan/total_points*100:.1f}%)[/blue]")
         console.print(f"Points identified as anomalies only by Bayesian: [magenta]{only_bayesian} ({only_bayesian/total_points*100:.1f}%)[/magenta]")
+        
+        # Calculate and print additional metrics
+        if both_anomaly + only_dbscan > 0:
+            precision_vs_dbscan = both_anomaly / (both_anomaly + only_bayesian)
+            recall_vs_dbscan = both_anomaly / (both_anomaly + only_dbscan)
+            f1_vs_dbscan = 2 * (precision_vs_dbscan * recall_vs_dbscan) / (precision_vs_dbscan + recall_vs_dbscan) if (precision_vs_dbscan + recall_vs_dbscan) > 0 else 0
+            
+            console.print(f"\n[bold]Performance Metrics (treating DBSCAN as ground truth):[/bold]")
+            console.print(f"Precision: [cyan]{precision_vs_dbscan:.3f}[/cyan]")
+            console.print(f"Recall: [cyan]{recall_vs_dbscan:.3f}[/cyan]")
+            console.print(f"F1-Score: [cyan]{f1_vs_dbscan:.3f}[/cyan]")
         
         return {
             'agreement_percentage': agreement_percentage,
