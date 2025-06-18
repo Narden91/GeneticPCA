@@ -7,6 +7,9 @@ from pgmpy.inference import VariableElimination
 from rich.console import Console
 import matplotlib.pyplot as plt
 from rich.progress import Progress, SpinnerColumn, TextColumn
+import networkx as nx
+from matplotlib.patches import FancyBboxPatch
+import matplotlib.patches as mpatches
 
 console = Console()
 
@@ -42,6 +45,233 @@ class BayesianAnomalyDetector:
         self.selected_method = None
         self.feature_names = None
         self.thresholds = None
+        
+    def plot_bayesian_network(self, title="Learned Bayesian Network Structure", 
+                             save_path=None, figsize=(12, 8), show_cpd_info=True):
+        """
+        Plot the learned Bayesian network structure with enhanced visualization.
+        
+        Parameters:
+        -----------
+        title : str
+            Title for the plot
+        save_path : str, optional
+            Path to save the plot
+        figsize : tuple
+            Figure size (width, height)
+        show_cpd_info : bool
+            Whether to show conditional probability distribution info
+        """
+        if self.selected_method != "bayesian_network" or self.model is None:
+            console.print("[yellow]⚠️ No Bayesian network to plot. Either method is not 'bayesian_network' or model failed to train.[/yellow]")
+            return
+        
+        if not self.model.edges():
+            console.print("[yellow]⚠️ Bayesian network has no edges to plot (independent variables).[/yellow]")
+            return
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Convert pgmpy model to NetworkX graph
+        G = nx.DiGraph()
+        G.add_nodes_from(self.model.nodes())
+        G.add_edges_from(self.model.edges())
+        
+        # Choose layout based on number of nodes
+        n_nodes = len(G.nodes())
+        
+        if n_nodes <= 6:
+            # Use circular layout for small networks
+            pos = nx.circular_layout(G, scale=2)
+        elif n_nodes <= 12:
+            # Use spring layout for medium networks
+            pos = nx.spring_layout(G, k=3, iterations=50, seed=self.random_state)
+        else:
+            # Use hierarchical layout for larger networks
+            try:
+                pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
+            except:
+                # Fallback to spring layout if graphviz not available
+                pos = nx.spring_layout(G, k=2, iterations=30, seed=self.random_state)
+        
+        # Draw edges with arrows
+        nx.draw_networkx_edges(G, pos, edge_color='gray', arrows=True, 
+                              arrowsize=20, arrowstyle='->', width=2,
+                              connectionstyle="arc3,rad=0.1", alpha=0.7)
+        
+        # Prepare node information
+        node_info = {}
+        node_colors = []
+        node_sizes = []
+        
+        for node in G.nodes():
+            # Get parents and children
+            parents = list(G.predecessors(node))
+            children = list(G.successors(node))
+            
+            # Color nodes based on their role
+            if not parents and children:  # Root nodes (no parents, has children)
+                color = 'lightcoral'
+                size = 3000
+            elif parents and children:    # Intermediate nodes
+                color = 'lightblue'
+                size = 2500
+            elif parents and not children:  # Leaf nodes
+                color = 'lightgreen'
+                size = 2000
+            else:  # Isolated nodes
+                color = 'lightgray'
+                size = 1500
+            
+            node_colors.append(color)
+            node_sizes.append(size)
+            
+            # Store info for potential display
+            node_info[node] = {
+                'parents': parents,
+                'children': children,
+                'n_parents': len(parents),
+                'n_children': len(children)
+            }
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors, 
+                              node_size=node_sizes, alpha=0.8,
+                              edgecolors='black', linewidths=2)
+        
+        # Draw labels with better formatting
+        labels = {}
+        for node in G.nodes():
+            # Truncate long variable names for better display
+            display_name = node if len(node) <= 10 else node[:8] + ".."
+            labels[node] = display_name
+        
+        nx.draw_networkx_labels(G, pos, labels, font_size=10, 
+                               font_weight='bold', font_color='black')
+        
+        # Add title and information
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        
+        # Create legend
+        legend_elements = [
+            mpatches.Patch(color='lightcoral', label='Root Nodes (no parents)'),
+            mpatches.Patch(color='lightblue', label='Intermediate Nodes'),
+            mpatches.Patch(color='lightgreen', label='Leaf Nodes (no children)'),
+            mpatches.Patch(color='lightgray', label='Isolated Nodes')
+        ]
+        ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0, 1))
+        
+        # Add network statistics as text
+        stats_text = (
+            f"Network Statistics:\n"
+            f"• Nodes: {len(G.nodes())}\n"
+            f"• Edges: {len(G.edges())}\n"
+            f"• Density: {nx.density(G):.3f}\n"
+            f"• Max Parents: {max([node_info[n]['n_parents'] for n in G.nodes()], default=0)}\n"
+            f"• Max Children: {max([node_info[n]['n_children'] for n in G.nodes()], default=0)}"
+        )
+        
+        # Add text box with statistics
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+        ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='bottom', bbox=props)
+        
+        # Show conditional probability information if requested
+        if show_cpd_info and hasattr(self.model, 'cpds') and self.model.cpds:
+            cpd_info = f"CPDs learned: {len(self.model.cpds)}"
+            ax.text(0.98, 0.02, cpd_info, transform=ax.transAxes, fontsize=10,
+                   verticalalignment='bottom', horizontalalignment='right',
+                   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+        
+        # Remove axes
+        ax.set_axis_off()
+        
+        # Adjust layout to prevent clipping
+        plt.tight_layout()
+        
+        # Save if requested
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', 
+                       facecolor='white', edgecolor='none')
+            console.print(f"[green]✓ Bayesian network plot saved to [bold]{save_path}[/bold][/green]")
+        
+        plt.show()
+        
+        # Print detailed node information
+        console.print("\n[bold]Bayesian Network Structure Details:[/bold]")
+        for node in sorted(G.nodes()):
+            info = node_info[node]
+            parents_str = ", ".join(info['parents']) if info['parents'] else "None"
+            children_str = ", ".join(info['children']) if info['children'] else "None"
+            console.print(f"[cyan]{node}:[/cyan] Parents: [{parents_str}] → Children: [{children_str}]")
+    
+    def plot_network_comparison(self, save_path=None, figsize=(15, 6)):
+        """
+        Plot comparison between the learned network and a naive Bayes structure.
+        
+        Parameters:
+        -----------
+        save_path : str, optional
+            Path to save the plot
+        figsize : tuple
+            Figure size (width, height)
+        """
+        if self.selected_method != "bayesian_network" or self.model is None:
+            console.print("[yellow]⚠️ No Bayesian network available for comparison.[/yellow]")
+            return
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        
+        # Plot 1: Learned network
+        G_learned = nx.DiGraph()
+        G_learned.add_nodes_from(self.model.nodes())
+        G_learned.add_edges_from(self.model.edges())
+        
+        if G_learned.edges():
+            pos1 = nx.spring_layout(G_learned, seed=self.random_state)
+            nx.draw(G_learned, pos1, ax=ax1, with_labels=True, node_color='lightblue',
+                   node_size=2000, font_size=8, font_weight='bold', arrows=True,
+                   edge_color='gray', arrowsize=20)
+            ax1.set_title("Learned Bayesian Network", fontweight='bold')
+        else:
+            ax1.text(0.5, 0.5, "No edges learned\n(Independent variables)", 
+                    ha='center', va='center', transform=ax1.transAxes,
+                    fontsize=12, bbox=dict(boxstyle='round', facecolor='wheat'))
+            ax1.set_title("Learned Network (No Dependencies)", fontweight='bold')
+        
+        # Plot 2: Naive Bayes equivalent
+        G_naive = nx.DiGraph()
+        nodes = list(self.model.nodes())
+        G_naive.add_nodes_from(nodes)
+        
+        if len(nodes) > 1:
+            # Create naive Bayes structure (star topology)
+            root = nodes[0]
+            naive_edges = [(root, node) for node in nodes[1:]]
+            G_naive.add_edges_from(naive_edges)
+            
+            pos2 = nx.spring_layout(G_naive, seed=self.random_state)
+            nx.draw(G_naive, pos2, ax=ax2, with_labels=True, node_color='lightcoral',
+                   node_size=2000, font_size=8, font_weight='bold', arrows=True,
+                   edge_color='gray', arrowsize=20)
+        
+        ax2.set_title("Naive Bayes Structure\n(for comparison)", fontweight='bold')
+        
+        # Add comparison statistics
+        learned_edges = len(G_learned.edges())
+        naive_edges = len(G_naive.edges())
+        
+        fig.suptitle(f"Structure Comparison: Learned ({learned_edges} edges) vs Naive Bayes ({naive_edges} edges)",
+                    fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            console.print(f"[green]✓ Network comparison plot saved to [bold]{save_path}[/bold][/green]")
+        
+        plt.show()
         
     def _prepare_data_for_bn(self, X):
         """Convert continuous data to discrete for Bayesian Network with better sensitivity"""

@@ -33,11 +33,10 @@ clustering:
   dbscan:
     eps: 20        # Epsilon for DBSCAN
     min_samples: 5    # Min_samples for DBSCAN
-  # evaluation_metrics: ["silhouette", "davies_bouldin"] # Future extension
 
 bayesian_anomaly_detection:
   enabled: True
   method: "bayesian_network"
   threshold_percentile: 97  
-  contamination: 0.03       
+  contamination: 0.02       
   compare_with_dbscan: True
